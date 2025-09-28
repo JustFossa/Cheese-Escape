@@ -7,8 +7,7 @@ public class PlayerData : NetworkBehaviour
     [Header("Player Information")]
     public NetworkVariable<FixedString64Bytes> playerName = new NetworkVariable<FixedString64Bytes>(
         "Player", 
-        NetworkVariableReadPermission.Everyone, 
-        NetworkVariableWritePermission.Owner
+        NetworkVariableReadPermission.Everyone
     );
 
     public string PlayerName => playerName.Value.ToString();
@@ -38,8 +37,6 @@ public class PlayerData : NetworkBehaviour
         {
             PlayerManager.Instance.RegisterPlayer(OwnerClientId, this);
         }
-        
-        Debug.Log($"Player {OwnerClientId} spawned with name: {PlayerName}");
     }
 
     public override void OnNetworkDespawn()
@@ -64,13 +61,10 @@ public class PlayerData : NetworkBehaviour
         }
         
         playerName.Value = newName;
-        Debug.Log($"Server: Player {OwnerClientId} name set to: {newName}");
     }
 
     private void OnPlayerNameChanged(FixedString64Bytes oldName, FixedString64Bytes newName)
     {
-        Debug.Log($"Player {OwnerClientId} name changed from '{oldName}' to '{newName}'");
-        
         // You can add additional logic here when the name changes
         // For example, update UI elements, leaderboards, etc.
     }

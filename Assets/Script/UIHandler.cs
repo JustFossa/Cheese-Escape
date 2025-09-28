@@ -30,14 +30,12 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
                     SceneManager.LoadScene("JoinGameScene");
                     break;
                 case "Quit":
-                    Debug.Log("Quit button clicked.");
                     Application.Quit();
                     break;
                 case "Back":
                     SceneManager.LoadScene("MainMenuScene");
                     break;
                 case "JoinGame":
-                    Debug.Log("Join Game button clicked.");
                     JoinGame();
                     break;
             }
@@ -48,19 +46,18 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
     {
         if (ipInputField != null)
         {
-            ipInputField.onValueChanged.AddListener(delegate { PlayerPrefs.SetString("ServerIP", ipInputField.text); });
+            ipInputField.onValueChanged.AddListener(delegate { PlayerPrefs.SetString("ServerIP", ipInputField.text); PlayerPrefs.Save(); });
+
         }
         if (playerNameInputField != null)
         {
-            playerNameInputField.onValueChanged.AddListener(delegate { PlayerPrefs.SetString("PlayerName", playerNameInputField.text); });
+            playerNameInputField.onValueChanged.AddListener(delegate { PlayerPrefs.SetString("PlayerName", playerNameInputField.text); PlayerPrefs.Save(); });
         }
     }
 
 
     public void StartHost()
     {
-        // Save the player name before starting host
-        SavePlayerName();
         
         NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>().SetConnectionData("127.0.0.1", (ushort)7777, "0.0.0.0");
 
@@ -72,8 +69,7 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
 
     public void JoinGame()
     {
-        // Save the player name before joining
-        SavePlayerName();
+
         
         string ip = PlayerPrefs.GetString("ServerIP", "127.0.0.1");
         NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>().SetConnectionData(ip, (ushort)7777);
@@ -83,24 +79,7 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
         StartCoroutine(LoadLobbyAfterClientConnect());
     }
 
-    private void SavePlayerName()
-    {
-        // Ensure the player name is saved from the input field
-        if (playerNameInputField != null && !string.IsNullOrEmpty(playerNameInputField.text))
-        {
-            PlayerPrefs.SetString("PlayerName", playerNameInputField.text);
-            PlayerPrefs.Save();
-            Debug.Log("Player name saved: " + playerNameInputField.text);
-        }
-        else
-        {
-            // Set a default name if none is provided
-            string defaultName = "Player";
-            PlayerPrefs.SetString("PlayerName", defaultName);
-            PlayerPrefs.Save();
-            Debug.Log("Using default player name: " + defaultName);
-        }
-    }
+
 
     private IEnumerator LoadLobbyAfterHostStart()
     {
@@ -113,7 +92,6 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
             yield return new WaitForSeconds(0.1f);
         }
         
-        Debug.Log("Host started successfully, loading LobbyScene");
         SceneManager.LoadScene("LobbyScene");
     }
 
@@ -134,12 +112,10 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
         
         if (NetworkManager.Singleton.IsConnectedClient)
         {
-            Debug.Log("Client connected successfully, loading LobbyScene");
             SceneManager.LoadScene("LobbyScene");
         }
         else
         {
-            Debug.LogError("Failed to connect to server within timeout period");
             // Optionally show an error message to the user here
         }
     }

@@ -15,6 +15,27 @@ public class PlayerListUI : NetworkBehaviour
     
     private float updateTimer = 0f;
 
+    void Start()
+    {
+        // Subscribe to PlayerManager events if available
+        if (PlayerManager.Instance != null)
+        {
+            PlayerManager.Instance.OnLobbyPlayerJoined += OnLobbyPlayerJoined;
+            PlayerManager.Instance.OnLobbyPlayerLeft += OnLobbyPlayerLeft;
+        }
+    }
+    
+    public override void OnDestroy()
+    {
+        // Unsubscribe from PlayerManager events
+        if (PlayerManager.Instance != null)
+        {
+            PlayerManager.Instance.OnLobbyPlayerJoined -= OnLobbyPlayerJoined;
+            PlayerManager.Instance.OnLobbyPlayerLeft -= OnLobbyPlayerLeft;
+        }
+        base.OnDestroy();
+    }
+    
     void Update()
     {
         if (!showPlayerList || playerListText == null) return;
@@ -26,26 +47,66 @@ public class PlayerListUI : NetworkBehaviour
             updateTimer = 0f;
         }
     }
+    
+    private void OnLobbyPlayerJoined(ulong clientId, string playerName)
+    {
+        UpdatePlayerList();
+    }
+    
+    private void OnLobbyPlayerLeft(ulong clientId, string playerName)
+    {
+        UpdatePlayerList();
+    }
 
     private void UpdatePlayerList()
     {
         if (PlayerManager.Instance == null) return;
         List<string> playerNames = new List<string>();
         
-        // Get all PlayerData components in the scene
-        PlayerData[] allPlayers = FindObjectsOfType<PlayerData>();
+        // Get all LobbyPlayer components in the scene for lobby display
+        LobbyPlayer[] allLobbyPlayers = FindObjectsOfType<LobbyPlayer>();
         
-        foreach (PlayerData player in allPlayers)
+        if (allLobbyPlayers.Length > 0)
         {
-            string playerInfo = $"• {player.PlayerName}";
-            
-            // Add additional info if this is the local player
-            if (player.IsOwner)
+            // We're in lobby - show lobby players
+            foreach (LobbyPlayer player in allLobbyPlayers)
             {
-                playerInfo += " (You)";
+                string playerInfo = $"• {player.PlayerName}";
+                
+                // Add additional info
+                if (player.IsOwner)
+                {
+                    playerInfo += " (You)";
+                }
+                
+                // Add host indicator
+                if (player.OwnerClientId == 0 || (NetworkManager.Singleton != null && 
+                    player.OwnerClientId == NetworkManager.Singleton.LocalClientId && 
+                    NetworkManager.Singleton.IsHost))
+                {
+                    playerInfo += " [Host]";
+                }
+                
+                playerNames.Add(playerInfo);
             }
+        }
+        else
+        {
+            // We're in game - show regular players
+            PlayerData[] allPlayers = FindObjectsOfType<PlayerData>();
             
-            playerNames.Add(playerInfo);
+            foreach (PlayerData player in allPlayers)
+            {
+                string playerInfo = $"• {player.PlayerName}";
+                
+                // Add additional info if this is the local player
+                if (player.IsOwner)
+                {
+                    playerInfo += " (You)";
+                }
+                
+                playerNames.Add(playerInfo);
+            }
         }
         
         // Update the UI text

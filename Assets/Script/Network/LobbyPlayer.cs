@@ -11,9 +11,9 @@ public class LobbyPlayer : NetworkBehaviour
 {
     [Header("Lobby Player Info")]
     private NetworkVariable<FixedString64Bytes> lobbyPlayerName = new NetworkVariable<FixedString64Bytes>(
-        "Player", 
+        "", 
         NetworkVariableReadPermission.Everyone, 
-        NetworkVariableWritePermission.Owner
+        NetworkVariableWritePermission.Server
     );
 
     [Header("UI References (Optional)")]
@@ -24,31 +24,46 @@ public class LobbyPlayer : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-        
+
+
         if (IsOwner)
         {
             // Get the player name from PlayerPrefs
             string savedName = PlayerPrefs.GetString("PlayerName", "Player");
+        
             if (string.IsNullOrEmpty(savedName))
             {
                 savedName = "Player " + OwnerClientId;
             }
-            
+
             // Set the lobby player name
             SetLobbyPlayerNameServerRpc(savedName);
         }
-        
+
         // Subscribe to name changes
         lobbyPlayerName.OnValueChanged += OnNameChanged;
+
+
+
+        // Register with PlayerManager if it exists
+        if (PlayerManager.Instance != null)
+        {
+            PlayerManager.Instance.RegisterLobbyPlayer(OwnerClientId, this);
+            print("LobbyPlayer spawned with name: " + PlayerName);
+        }
         
         // Update UI
         UpdateNameDisplay();
-        
-        Debug.Log($"LobbyPlayer {OwnerClientId} spawned with name: {PlayerName}");
     }
 
     public override void OnNetworkDespawn()
     {
+        // Unregister from PlayerManager
+        if (PlayerManager.Instance != null)
+        {
+            PlayerManager.Instance.UnregisterLobbyPlayer(OwnerClientId);
+        }
+        
         lobbyPlayerName.OnValueChanged -= OnNameChanged;
         base.OnNetworkDespawn();
     }
@@ -63,12 +78,10 @@ public class LobbyPlayer : NetworkBehaviour
         }
         
         lobbyPlayerName.Value = newName;
-        Debug.Log($"Server: LobbyPlayer {OwnerClientId} name set to: {newName}");
     }
 
     private void OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes newName)
     {
-        Debug.Log($"LobbyPlayer {OwnerClientId} name changed from '{oldName}' to '{newName}'");
         UpdateNameDisplay();
     }
 

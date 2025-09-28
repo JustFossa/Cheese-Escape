@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
@@ -19,8 +20,8 @@ public class LobbyManager : NetworkBehaviour
     );
 
     private NetworkVariable<int> connectedPlayersCount = new NetworkVariable<int>(
-        0, 
-        NetworkVariableReadPermission.Everyone, 
+        0,
+        NetworkVariableReadPermission.Everyone,
         NetworkVariableWritePermission.Server
     );
 
@@ -59,8 +60,6 @@ public class LobbyManager : NetworkBehaviour
         // Subscribe to network variable changes
         connectedPlayersCount.OnValueChanged += OnPlayerCountNetworkChanged;
         isGameStarted.OnValueChanged += OnGameStartedNetworkChanged;
-
-        Debug.Log("LobbyManager spawned on network");
     }
 
     public override void OnNetworkDespawn()
@@ -81,15 +80,15 @@ public class LobbyManager : NetworkBehaviour
     {
         if (IsServer)
         {
-            Debug.Log($"LobbyManager: Client {clientId} connected to lobby");
             UpdatePlayerCount();
             
             // If game has already started, we might want to handle late joiners differently
             if (isGameStarted.Value)
             {
-                Debug.Log($"Game already started, but client {clientId} joined");
                 // You can choose to either reject them or allow late joining
             }
+            
+            // Note: PlayerManager will handle spawning LobbyPlayer objects automatically
         }
     }
 
@@ -97,7 +96,6 @@ public class LobbyManager : NetworkBehaviour
     {
         if (IsServer)
         {
-            Debug.Log($"LobbyManager: Client {clientId} disconnected from lobby");
             UpdatePlayerCount();
         }
     }
@@ -107,19 +105,16 @@ public class LobbyManager : NetworkBehaviour
         if (IsServer)
         {
             connectedPlayersCount.Value = NetworkManager.Singleton.ConnectedClients.Count;
-            Debug.Log($"Updated player count: {connectedPlayersCount.Value}");
         }
     }
 
     private void OnPlayerCountNetworkChanged(int oldCount, int newCount)
     {
-        Debug.Log($"Player count changed from {oldCount} to {newCount}");
         OnPlayerCountChanged?.Invoke(newCount);
     }
 
     private void OnGameStartedNetworkChanged(bool oldValue, bool newValue)
     {
-        Debug.Log($"Game started state changed from {oldValue} to {newValue}");
         OnGameStateChanged?.Invoke(newValue);
         
         if (newValue)
@@ -136,24 +131,57 @@ public class LobbyManager : NetworkBehaviour
         // Only allow the host (server) to start the game
         if (rpcParams.Receive.SenderClientId != NetworkManager.Singleton.LocalClientId && !NetworkManager.Singleton.IsServer)
         {
-            Debug.LogWarning("Only the host can start the game!");
             return;
         }
 
         if (isGameStarted.Value)
         {
-            Debug.LogWarning("Game is already started!");
             return;
         }
 
         if (connectedPlayersCount.Value < 1)
         {
-            Debug.LogWarning("Not enough players to start the game!");
             return;
         }
 
-        Debug.Log("Host is starting the game!");
+        // Start the game transition process
+        StartCoroutine(StartGameTransition());
+    }
+    
+    // Coroutine to handle the game start transition
+    private System.Collections.IEnumerator StartGameTransition()
+    {
+        print("Starting game transition...");
+        
+        // Set game started flag
         isGameStarted.Value = true;
+        
+        // Wait a moment for UI updates
+        yield return new WaitForSeconds(0.5f);
+        
+        // Cleanup lobby players and spawn game players
+        if (PlayerManager.Instance != null)
+        {
+            // Clean up lobby players first
+            PlayerManager.Instance.CleanupLobbyPlayers();
+            
+            // Wait a moment for cleanup
+            yield return new WaitForSeconds(0.2f);
+            
+            // Spawn game players for all connected clients
+            PlayerManager.Instance.SpawnGamePlayersForAllClients();
+            print("Game players spawned for all clients");
+        }
+        else
+        {
+            print("Warning: PlayerManager instance not found!");
+        }
+        
+        // Wait a moment for spawning to complete
+        yield return new WaitForSeconds(0.5f);
+        
+        // Load the game scene
+        LoadGameScene();
     }
 
     // Method to load the game scene for all clients
@@ -161,7 +189,8 @@ public class LobbyManager : NetworkBehaviour
     {
         if (IsServer)
         {
-            Debug.Log($"Loading game scene: {gameSceneName}");
+            print($"Loading game scene: {gameSceneName}");
+            
             // Use NetworkManager's scene management to load the scene for all clients
             NetworkManager.Singleton.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
         }
@@ -186,6 +215,65 @@ public class LobbyManager : NetworkBehaviour
         }
         
         // Return to main menu
+        SceneManager.LoadScene("MainMenuScene");
+    }
+    
+    // Method for host to leave lobby and disconnect all clients
+    public void HostLeaveLobby()
+    {
+        if (IsServer)
+        {
+            // Notify all clients that host is leaving
+            NotifyClientsHostLeavingClientRpc();
+            
+            // Start coroutine to shutdown server after a brief delay
+            StartCoroutine(ShutdownServerDelayed());
+        }
+        else
+        {
+            // Fallback to regular leave if not server
+            LeaveLobby();
+        }
+    }
+    
+    [ClientRpc]
+    private void NotifyClientsHostLeavingClientRpc()
+    {
+        // If this is not the host (i.e., a regular client), disconnect them
+        if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsHost)
+        {
+            // Disconnect the client after a brief delay
+            StartCoroutine(DisconnectClientDelayed());
+        }
+    }
+    
+    private System.Collections.IEnumerator ShutdownServerDelayed()
+    {
+        // Wait a moment to ensure the ClientRpc is sent to all clients
+        yield return new WaitForSeconds(0.5f);
+        
+        // Now shutdown the server
+        if (NetworkManager.Singleton != null)
+        {
+            NetworkManager.Singleton.Shutdown();
+        }
+        
+        // Return host to main menu
+        SceneManager.LoadScene("MainMenuScene");
+    }
+    
+    private System.Collections.IEnumerator DisconnectClientDelayed()
+    {
+        // Wait a moment before disconnecting
+        yield return new WaitForSeconds(1f);
+        
+        // Shutdown client connection
+        if (NetworkManager.Singleton != null)
+        {
+            NetworkManager.Singleton.Shutdown();
+        }
+        
+        // Return client to main menu
         SceneManager.LoadScene("MainMenuScene");
     }
 

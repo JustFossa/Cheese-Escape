@@ -20,6 +20,12 @@ public class Movement : NetworkBehaviour
     public float bobAmount = 0.05f;
     public float bobSpeed = 14f;
     public bool enableViewBobbing = true;
+    
+    [Header("Physics Settings")]
+    public float linearDrag = 1f;
+    public float angularDrag = 10f;
+    public float playerMass = 1f;
+    public float collisionDamping = 0.5f;
 
 
     private Rigidbody rb;
@@ -35,30 +41,46 @@ public class Movement : NetworkBehaviour
     private InputAction lookAction;
     private Vector2 moveInput;
     private Vector2 lookInput;
+
+    public GameObject playerModel;
     
     // View bobbing variables
     private Vector3 cameraOriginalPosition;
     private float bobTimer = 0f;
     private bool isMoving = false;
+
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        // Setup camera and input after network spawn
+        SetupPlayerComponents();
+        
+    }
     
     // Start is called before the first frame update
     void Start()
     {
         rb = GetComponent<Rigidbody>();
         
-        // Get PlayerInput component and setup input actions
-        playerInput = GetComponent<PlayerInput>();
-        if (playerInput != null)
+        // Configure Rigidbody to prevent unwanted spinning
+        if (rb != null)
         {
-            moveAction = playerInput.actions["Move"];
-            jumpAction = playerInput.actions["Jump"];
-            lookAction = playerInput.actions["Look"];
+            // Freeze rotation on X and Z axes to prevent spinning from collisions
+            rb.freezeRotation = true;
+            
+            // Set drag values to reduce sliding and spinning
+            rb.drag = linearDrag; // Linear drag to reduce sliding
+            rb.angularDrag = angularDrag; // Angular drag to reduce spinning (though rotation is frozen)
+            
+            // Set mass for more stable physics
+            rb.mass = playerMass;
         }
         
-        // Lock cursor to center of screen
-        Cursor.lockState = CursorLockMode.Locked;
+        // Setup physics material for all colliders to prevent bouncing and reduce friction
+        SetupPhysicsMaterial();
         
-        // Create ground check point if it doesn't exist
+        // Create ground check point if it doesn't exist (for all players)
         if (groundCheck == null)
         {
             GameObject groundCheckObj = new GameObject("GroundCheck");
@@ -67,10 +89,155 @@ public class Movement : NetworkBehaviour
             groundCheck = groundCheckObj.transform;
         }
         
-        // Store the original camera position for view bobbing
-        if (cameraTransform != null)
+        if(IsOwner && playerModel != null)
         {
-            cameraOriginalPosition = cameraTransform.localPosition;
+            // Disable the player model for the local player to prevent seeing own body
+            playerModel.SetActive(false);
+        }
+
+
+        // If network isn't spawned yet, setup components anyway
+            if (!IsSpawned)
+            {
+                SetupPlayerComponents();
+            }
+    }
+    
+    private void SetupPlayerComponents()
+    {
+        // Only setup input and camera for the local player (owner)
+        if (IsOwner)
+        {
+            // Get PlayerInput component and setup input actions
+            playerInput = GetComponent<PlayerInput>();
+            if (playerInput != null)
+            {
+                playerInput.enabled = true;
+                moveAction = playerInput.actions["Move"];
+                jumpAction = playerInput.actions["Jump"];
+                lookAction = playerInput.actions["Look"];
+            }
+            
+            // Lock cursor to center of screen
+            Cursor.lockState = CursorLockMode.Locked;
+            
+            // Disable any existing main cameras in the scene (to prevent conflicts)
+            DisableSceneCamera();
+            
+            // Enable the camera for the local player
+            if (cameraTransform != null)
+            {
+                Camera playerCamera = cameraTransform.GetComponent<Camera>();
+                if (playerCamera != null)
+                {
+                    playerCamera.enabled = true;
+                    print($"Enabled camera for local player {OwnerClientId}");
+                    
+                    // Also enable AudioListener if present
+                    AudioListener audioListener = cameraTransform.GetComponent<AudioListener>();
+                    if (audioListener != null)
+                    {
+                        audioListener.enabled = true;
+                        print($"Enabled audio listener for local player {OwnerClientId}");
+                    }
+                }
+                
+                // Store the original camera position for view bobbing
+                cameraOriginalPosition = cameraTransform.localPosition;
+            }
+        }
+        else
+        {
+            // Disable camera and audio listener for remote players
+            if (cameraTransform != null)
+            {
+                Camera playerCamera = cameraTransform.GetComponent<Camera>();
+                if (playerCamera != null)
+                {
+                    playerCamera.enabled = false;
+                    print($"Disabled camera for remote player {OwnerClientId}");
+                }
+                
+                AudioListener audioListener = cameraTransform.GetComponent<AudioListener>();
+                if (audioListener != null)
+                {
+                    audioListener.enabled = false;
+                    print($"Disabled audio listener for remote player {OwnerClientId}");
+                }
+            }
+            
+            // Disable PlayerInput for remote players
+            playerInput = GetComponent<PlayerInput>();
+            if (playerInput != null)
+            {
+                playerInput.enabled = false;
+            }
+        }
+    }
+    
+    public override void OnNetworkDespawn()
+    {
+        // Release cursor lock when the local player is destroyed
+        if (IsOwner)
+        {
+            Cursor.lockState = CursorLockMode.None;
+        }
+        
+        base.OnNetworkDespawn();
+    }
+    
+    public override void OnDestroy()
+    {
+        // Also release cursor lock on destroy
+        if (IsOwner)
+        {
+            Cursor.lockState = CursorLockMode.None;
+        }
+        
+        base.OnDestroy();
+    }
+    
+    private void DisableSceneCamera()
+    {
+        // Find and disable any main camera in the scene that's not part of a player
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null && mainCamera.transform != cameraTransform)
+        {
+            mainCamera.enabled = false;
+            print("Disabled scene main camera to prevent conflicts");
+            
+            // Also disable its AudioListener if present
+            AudioListener sceneAudioListener = mainCamera.GetComponent<AudioListener>();
+            if (sceneAudioListener != null)
+            {
+                sceneAudioListener.enabled = false;
+                print("Disabled scene audio listener");
+            }
+        }
+    }
+    
+    private void SetupPhysicsMaterial()
+    {
+        // Get all colliders on this GameObject and its children
+        Collider[] colliders = GetComponentsInChildren<Collider>();
+        
+        foreach (Collider col in colliders)
+        {
+            // Try to load the physics material we created
+            PhysicMaterial playerPhysics = Resources.Load<PhysicMaterial>("PlayerPhysics");
+            
+            // If we can't load it, create one with the right settings
+            if (playerPhysics == null)
+            {
+                playerPhysics = new PhysicMaterial("PlayerPhysics");
+                playerPhysics.dynamicFriction = 0.3f;
+                playerPhysics.staticFriction = 0.3f;
+                playerPhysics.bounciness = 0f; // No bouncing
+                playerPhysics.frictionCombine = PhysicMaterialCombine.Average;
+                playerPhysics.bounceCombine = PhysicMaterialCombine.Minimum;
+            }
+            
+            col.material = playerPhysics;
         }
     }
 
@@ -78,7 +245,7 @@ public class Movement : NetworkBehaviour
     void Update()
     {
         // Only process input if this is the local player
-        if (!IsOwner) return;
+        if (!IsOwner || cameraTransform == null) return;
         
         // Calculate movement direction relative to camera
         Vector3 forward = cameraTransform.forward;
@@ -113,10 +280,28 @@ public class Movement : NetworkBehaviour
     
     void Move()
     {
-        // Apply horizontal movement while preserving Y velocity
-        Vector3 velocity = moveDirection * moveSpeed;
-        velocity.y = rb.velocity.y;
-        rb.velocity = velocity;
+        // Use AddForce for more natural physics interaction instead of directly setting velocity
+        Vector3 targetVelocity = moveDirection * moveSpeed;
+        Vector3 currentVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+        Vector3 velocityDifference = targetVelocity - currentVelocity;
+        
+        // Apply force to reach target velocity, but don't exceed it
+        if (velocityDifference.magnitude > 0.1f)
+        {
+            // Use ForceMode.VelocityChange for immediate response, but scaled down for smoothness
+            rb.AddForce(velocityDifference * 10f, ForceMode.Force);
+        }
+        
+        // Ensure we don't exceed max speed
+        Vector3 horizontalVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+        if (horizontalVelocity.magnitude > moveSpeed)
+        {
+            horizontalVelocity = horizontalVelocity.normalized * moveSpeed;
+            rb.velocity = new Vector3(horizontalVelocity.x, rb.velocity.y, horizontalVelocity.z);
+        }
+        
+        // Always ensure no unwanted rotation
+        rb.angularVelocity = Vector3.zero;
     }
     
     void Jump()
@@ -197,6 +382,38 @@ public class Movement : NetworkBehaviour
     {
         if (!IsOwner) return;
         lookInput = value.Get<Vector2>();
+    }
+    
+    // Handle collisions with other players to prevent spinning
+    void OnCollisionEnter(Collision collision)
+    {
+        // Check if we collided with another player
+        if (collision.gameObject.GetComponent<Movement>() != null)
+        {
+            // Stop any unwanted rotation immediately
+            if (rb != null)
+            {
+                rb.angularVelocity = Vector3.zero;
+                
+                // Reduce the collision impact by dampening the velocity
+                Vector3 currentVelocity = rb.velocity;
+                currentVelocity.x *= collisionDamping; // Reduce horizontal velocity
+                currentVelocity.z *= collisionDamping; // Reduce horizontal velocity
+                rb.velocity = currentVelocity;
+            }
+        }
+    }
+    
+    void OnCollisionStay(Collision collision)
+    {
+        // Continuously prevent spinning while in contact with another player
+        if (collision.gameObject.GetComponent<Movement>() != null)
+        {
+            if (rb != null)
+            {
+                rb.angularVelocity = Vector3.zero;
+            }
+        }
     }
     
     // Visual debugging for ground check

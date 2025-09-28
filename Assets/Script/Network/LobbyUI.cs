@@ -4,7 +4,7 @@ using UnityEngine.UI;
 using TMPro;
 using UnityEngine.SceneManagement;
 
-public class LobbyUI : NetworkBehaviour
+public class LobbyUI : MonoBehaviour
 {
     [Header("UI References")]
     public TextMeshProUGUI lobbyStatusText;
@@ -12,7 +12,7 @@ public class LobbyUI : NetworkBehaviour
     public Button startGameButton;
     public Button leaveLobbyButton;
     public GameObject hostControls; // Panel that should only be visible to host
-    public GameObject waitingMessage; // Message shown to non-host players
+
 
     [Header("Settings")]
     public float updateInterval = 0.5f; // How often to update the UI
@@ -36,8 +36,10 @@ public class LobbyUI : NetworkBehaviour
         // Find PlayerListUI if it exists
         playerListUI = FindObjectOfType<PlayerListUI>();
 
-        startGameButton.enabled = IsHost;
-        waitingMessage.SetActive(!IsHost);
+        print("PlayerListUI: " + (playerListUI != null ? "Found" : "Not Found"));
+
+        // Will be set properly when LobbyManager is available
+
     }
 
     private System.Collections.IEnumerator WaitForLobbyManager()
@@ -61,7 +63,6 @@ public class LobbyUI : NetworkBehaviour
     void Update()
     {
         if (lobbyManager == null) return;
-
         updateTimer += Time.deltaTime;
         if (updateTimer >= updateInterval)
         {
@@ -70,7 +71,7 @@ public class LobbyUI : NetworkBehaviour
         }
     }
 
-    public override void OnDestroy()
+    void OnDestroy()
     {
         // Unsubscribe from events
         if (lobbyManager != null)
@@ -78,7 +79,6 @@ public class LobbyUI : NetworkBehaviour
             lobbyManager.OnPlayerCountChanged -= OnPlayerCountChanged;
             lobbyManager.OnGameStateChanged -= OnGameStateChanged;
         }
-        base.OnDestroy();
     }
 
     private void UpdateUI()
@@ -96,9 +96,7 @@ public class LobbyUI : NetworkBehaviour
         if (hostControls != null)
             hostControls.SetActive(isHost);
         
-        if (waitingMessage != null)
-            waitingMessage.SetActive(!isHost);
-
+        
         // Update start game button
         if (startGameButton != null)
         {
@@ -127,6 +125,7 @@ public class LobbyUI : NetworkBehaviour
         // Update player list if we don't have a separate PlayerListUI
         if (playerListText != null && playerListUI == null)
         {
+            print("Updating player list text in LobbyUI");
             UpdatePlayerListText();
         }
     }
@@ -135,15 +134,15 @@ public class LobbyUI : NetworkBehaviour
     {
         if (playerListText == null) return;
 
-        // Get all PlayerData components in the scene
-        PlayerData[] allPlayers = FindObjectsOfType<PlayerData>();
+        // Get all LobbyPlayer components in the scene
+        LobbyPlayer[] allLobbyPlayers = FindObjectsOfType<LobbyPlayer>();
         
-        if (allPlayers.Length > 0)
+        if (allLobbyPlayers.Length > 0)
         {
             System.Text.StringBuilder playerList = new System.Text.StringBuilder();
             playerList.AppendLine("Players in Lobby:");
             
-            foreach (PlayerData player in allPlayers)
+            foreach (LobbyPlayer player in allLobbyPlayers)
             {
                 string playerInfo = $"• {player.PlayerName}";
                 
@@ -153,11 +152,10 @@ public class LobbyUI : NetworkBehaviour
                     playerInfo += " (You)";
                 }
                 
-                if (player.OwnerClientId == NetworkManager.Singleton.LocalClientId && NetworkManager.Singleton.IsHost)
-                {
-                    playerInfo += " [Host]";
-                }
-                else if (player.OwnerClientId == 0) // Server/Host client ID is usually 0
+                // Add host indicator
+                if (player.OwnerClientId == 0 || (NetworkManager.Singleton != null && 
+                    player.OwnerClientId == NetworkManager.Singleton.LocalClientId && 
+                    NetworkManager.Singleton.IsHost))
                 {
                     playerInfo += " [Host]";
                 }
@@ -175,13 +173,11 @@ public class LobbyUI : NetworkBehaviour
 
     private void OnPlayerCountChanged(int newCount)
     {
-        Debug.Log($"LobbyUI: Player count changed to {newCount}");
         UpdateUI();
     }
 
     private void OnGameStateChanged(bool gameStarted)
     {
-        Debug.Log($"LobbyUI: Game state changed to {gameStarted}");
         UpdateUI();
         
         if (gameStarted)
@@ -198,22 +194,36 @@ public class LobbyUI : NetworkBehaviour
     {
         if (lobbyManager != null && lobbyManager.CanStartGame)
         {
-            Debug.Log("Host clicked Start Game button");
+            print("Host clicked Start Game - initiating game start sequence");
             lobbyManager.StartGameServerRpc();
+            
+            // Update UI immediately to show that the process has started
+            if (lobbyStatusText != null)
+            {
+                lobbyStatusText.text = "Starting Game...";
+            }
         }
         else
         {
-            Debug.LogWarning("Cannot start game - conditions not met");
+            print("Cannot start game - conditions not met");
         }
     }
 
     private void OnLeaveLobbyClicked()
     {
-        Debug.Log("Player clicked Leave Lobby button");
-        
         if (lobbyManager != null)
         {
-            lobbyManager.LeaveLobby();
+            // Check if this is the host
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost)
+            {
+                // Host is leaving - use LobbyManager to handle host disconnect  
+                lobbyManager.HostLeaveLobby();
+            }
+            else
+            {
+                // Regular client leaving
+                lobbyManager.LeaveLobby();
+            }
         }
         else
         {
@@ -225,6 +235,7 @@ public class LobbyUI : NetworkBehaviour
             SceneManager.LoadScene("MainMenuScene");
         }
     }
+
 
     // Public method to manually refresh the UI
     public void RefreshUI()
