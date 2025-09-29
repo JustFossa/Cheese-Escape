@@ -24,15 +24,7 @@
                     "interactions": "",
                     "initialStateCheck": true
                 },
-                {
-                    "name": "Jump",
-                    "type": "Button",
-                    "id": "8c4abdf8-4099-493a-aa1a-129acec7c3df",
-                    "expectedControlType": "",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
+
                 {
                     "name": "Sprint",
                     "type": "Button",
@@ -165,17 +157,7 @@
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
-                {
-                    "name": "",
-                    "id": "8255d333-a5a1-4f4c-8ec5-4e9c1e5b2a6f",
-                    "path": "<Keyboard>/space",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "Keyboard&Mouse",
-                    "action": "Jump",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
+
                 {
                     "name": "",
                     "id": "7a6b8c9d-1e2f-4a5b-8c7d-9e3f4a5b6c8d",

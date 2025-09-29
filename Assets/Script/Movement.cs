@@ -9,7 +9,6 @@ public class Movement : NetworkBehaviour
     [Header("Movement Settings")]
     public float moveSpeed = 5f;
     public float sprintSpeed = 8f;
-    public float jumpForce = 10f;
     public float mouseSensitivity = 2f;
     
     [Header("Stamina Settings")]
@@ -50,7 +49,6 @@ public class Movement : NetworkBehaviour
     // Input System variables
     private PlayerInput playerInput;
     private InputAction moveAction;
-    private InputAction jumpAction;
     private InputAction lookAction;
     private InputAction sprintAction;
     private Vector2 moveInput;
@@ -141,7 +139,6 @@ public class Movement : NetworkBehaviour
             {
                 playerInput.enabled = true;
                 moveAction = playerInput.actions["Move"];
-                jumpAction = playerInput.actions["Jump"];
                 lookAction = playerInput.actions["Look"];
                 sprintAction = playerInput.actions["Sprint"];
             }
@@ -333,12 +330,6 @@ public class Movement : NetworkBehaviour
         rb.angularVelocity = Vector3.zero;
     }
     
-    void Jump()
-    {
-        // Apply jump force
-        rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-    }
-    
     void HandleMouseLook()
     {
         // Get mouse input from Input System
@@ -497,17 +488,6 @@ public class Movement : NetworkBehaviour
         if (audioSource != null && lowStaminaSound != null)
         {
             audioSource.PlayOneShot(lowStaminaSound);
-        }
-    }
-    
-    // Input System callback for Jump action
-    public void OnJump(InputValue value)
-    {
-        if (!IsOwner) return;
-        
-        if (value.isPressed && isGrounded)
-        {
-            Jump();
         }
     }
     
