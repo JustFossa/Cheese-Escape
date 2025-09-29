@@ -126,6 +126,8 @@ public class PlayerManager : NetworkBehaviour
         {
             connectedPlayers[clientId] = playerData;
             
+       
+            
             // Notify all clients about the new player
             NotifyPlayerJoinedClientRpc(clientId, playerData.PlayerName);
         }
@@ -279,6 +281,32 @@ public class PlayerManager : NetworkBehaviour
         }
         return names;
     }
+
+    // Method to get the current hunter player
+    public PlayerData GetHunter()
+    {
+        foreach (var player in connectedPlayers.Values)
+        {
+            if (player != null && player.IsHunter)
+            {
+                return player;
+            }
+        }
+        return null;
+    }
+
+    // Method to get the hunter's client ID
+    public ulong? GetHunterClientId()
+    {
+        foreach (var kvp in connectedPlayers)
+        {
+            if (kvp.Value != null && kvp.Value.IsHunter)
+            {
+                return kvp.Key;
+            }
+        }
+        return null;
+    }
     
     // Method to get lobby player count
     public int GetLobbyPlayerCount()
@@ -365,7 +393,7 @@ public class PlayerManager : NetworkBehaviour
         
         print($"Spawning game player for client {clientId} (IsHunter: {isHunter})");
         // Calculate spawn position
-        Vector3 spawnPosition = GetSpawnPosition(clientId);
+        Vector3 spawnPosition = GetSpawnPosition(clientId, isHunter);
         
         // Instantiate the game player prefab
         GameObject gamePlayerObj = Instantiate(isHunter ? hunterPrefab : playerPrefab, spawnPosition, Quaternion.identity);
@@ -377,6 +405,12 @@ public class PlayerManager : NetworkBehaviour
             networkObject.SpawnAsPlayerObject(clientId);
             print($"Spawned game player for client {clientId} at position {spawnPosition}");
             
+            // If this is the hunter, set the hunter status after a brief delay to ensure PlayerData is registered
+            if (isHunter)
+            {
+                StartCoroutine(SetHunterStatusAfterSpawn(clientId));
+            }
+            
             // The PlayerData component will register itself when it spawns
         }
         else
@@ -386,20 +420,52 @@ public class PlayerManager : NetworkBehaviour
         }
     }
 
-    // Method to calculate spawn position for players
-    private Vector3 GetSpawnPosition(ulong clientId)
+    // Coroutine to set hunter status after player spawn
+    private IEnumerator SetHunterStatusAfterSpawn(ulong clientId)
     {
+        // Wait a brief moment to ensure PlayerData has registered itself
+        yield return new WaitForSeconds(0.1f);
+        
+        // Try to get the PlayerData for this client
+        PlayerData playerData = GetPlayer(clientId);
+        int attempts = 0;
+        
+        // Keep trying for a few seconds if PlayerData isn't registered yet
+        while (playerData == null && attempts < 50) // 5 seconds max (50 * 0.1s)
+        {
+            yield return new WaitForSeconds(0.1f);
+            playerData = GetPlayer(clientId);
+            attempts++;
+        }
+        
+        if (playerData != null)
+        {
+            // Set the hunter status
+            playerData.SetHunterStatusServerRpc(true);
+            print($"Successfully set hunter status for client {clientId}");
+        }
+        else
+        {
+            print($"Failed to set hunter status for client {clientId} - PlayerData not found after waiting");
+        }
+    }
+
+    // Method to calculate spawn position for players
+    private Vector3 GetSpawnPosition(ulong clientId, bool isHunter = false)
+    {
+
+        if (isHunter)
+        {
+            return new Vector3(-26.55f, 1, -59.71f);
+        }
         var spawnPoints = new Vector3[]
         {
-            new Vector3(0, 1, 0),
-            new Vector3(5, 1, 5),
-            new Vector3(-5, 1, -5),
-            new Vector3(5, 1, -5),
-            new Vector3(-5, 1, 5),
-            new Vector3(10, 1, 0),
-            new Vector3(-10, 1, 0),
-            new Vector3(0, 1, 10),
-            new Vector3(0, 1, -10)
+            new Vector3(8.73f, 1, -2.7f),
+            new Vector3(10.58f, 1, -2.7f),
+            new Vector3(12.64f, 1, -2.7f),
+            new Vector3(14.29f, 1, -2.7f),
+            new Vector3(16.14f, 1, -2.7f),
+            new Vector3(17.4f, 1, -2.7f),
         };
 
         int index = (int)(clientId % (ulong)spawnPoints.Length);

@@ -8,8 +8,15 @@ public class Movement : NetworkBehaviour
 {
     [Header("Movement Settings")]
     public float moveSpeed = 5f;
+    public float sprintSpeed = 8f;
     public float jumpForce = 10f;
     public float mouseSensitivity = 2f;
+    
+    [Header("Stamina Settings")]
+    public float maxStamina = 100f;
+    public float staminaRegenRate = 20f; // Stamina regenerated per second
+    public float sprintStaminaDrain = 25f; // Stamina drained per second while sprinting
+    public float minStaminaToSprint = 10f; // Minimum stamina required to start sprinting
     
     [Header("Ground Check")]
     public Transform groundCheck;
@@ -26,6 +33,12 @@ public class Movement : NetworkBehaviour
     public float angularDrag = 10f;
     public float playerMass = 1f;
     public float collisionDamping = 0.5f;
+    
+    [Header("Audio Settings")]
+    public AudioSource audioSource;
+    public AudioClip sprintStartSound;
+    public AudioClip sprintStopSound;
+    public AudioClip lowStaminaSound;
 
 
     private Rigidbody rb;
@@ -39,8 +52,19 @@ public class Movement : NetworkBehaviour
     private InputAction moveAction;
     private InputAction jumpAction;
     private InputAction lookAction;
+    private InputAction sprintAction;
     private Vector2 moveInput;
     private Vector2 lookInput;
+    private bool isSprintPressed;
+    
+    // Stamina variables
+    private float currentStamina;
+    private bool isSprinting = false;
+    private bool canSprint = true;
+    
+    // Public properties for UI access
+    public float CurrentStamina => currentStamina;
+    public bool IsSprinting => isSprinting;
 
     public GameObject playerModel;
     
@@ -63,12 +87,15 @@ public class Movement : NetworkBehaviour
     {
         rb = GetComponent<Rigidbody>();
         
+        // Initialize stamina
+        currentStamina = maxStamina;
+        
         // Configure Rigidbody to prevent unwanted spinning
         if (rb != null)
         {
-            // Freeze rotation on X and Z axes to prevent spinning from collisions
-            rb.freezeRotation = true;
-            
+            rb.freezeRotation = true; // Prevent rotation from physics
+            rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Better collision detection
+
             // Set drag values to reduce sliding and spinning
             rb.drag = linearDrag; // Linear drag to reduce sliding
             rb.angularDrag = angularDrag; // Angular drag to reduce spinning (though rotation is frozen)
@@ -116,6 +143,7 @@ public class Movement : NetworkBehaviour
                 moveAction = playerInput.actions["Move"];
                 jumpAction = playerInput.actions["Jump"];
                 lookAction = playerInput.actions["Look"];
+                sprintAction = playerInput.actions["Sprint"];
             }
             
             // Lock cursor to center of screen
@@ -166,12 +194,7 @@ public class Movement : NetworkBehaviour
                 }
             }
             
-            // Disable PlayerInput for remote players
-            playerInput = GetComponent<PlayerInput>();
-            if (playerInput != null)
-            {
-                playerInput.enabled = false;
-            }
+            
         }
     }
     
@@ -247,6 +270,9 @@ public class Movement : NetworkBehaviour
         // Only process input if this is the local player
         if (!IsOwner || cameraTransform == null) return;
         
+        // Handle stamina system
+        HandleStamina();
+        
         // Calculate movement direction relative to camera
         Vector3 forward = cameraTransform.forward;
         Vector3 right = cameraTransform.right;
@@ -280,8 +306,11 @@ public class Movement : NetworkBehaviour
     
     void Move()
     {
+        // Determine current movement speed based on sprinting
+        float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
+
         // Use AddForce for more natural physics interaction instead of directly setting velocity
-        Vector3 targetVelocity = moveDirection * moveSpeed;
+        Vector3 targetVelocity = moveDirection * currentSpeed;
         Vector3 currentVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
         Vector3 velocityDifference = targetVelocity - currentVelocity;
         
@@ -294,9 +323,9 @@ public class Movement : NetworkBehaviour
         
         // Ensure we don't exceed max speed
         Vector3 horizontalVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
-        if (horizontalVelocity.magnitude > moveSpeed)
+        if (horizontalVelocity.magnitude > currentSpeed)
         {
-            horizontalVelocity = horizontalVelocity.normalized * moveSpeed;
+            horizontalVelocity = horizontalVelocity.normalized * currentSpeed;
             rb.velocity = new Vector3(horizontalVelocity.x, rb.velocity.y, horizontalVelocity.z);
         }
         
@@ -334,12 +363,16 @@ public class Movement : NetworkBehaviour
         
         if (isMoving)
         {
+            // Adjust bobbing intensity and speed based on sprinting
+            float currentBobSpeed = isSprinting ? bobSpeed * 1.5f : bobSpeed;
+            float currentBobAmount = isSprinting ? bobAmount * 1.3f : bobAmount;
+            
             // Increment bob timer
-            bobTimer += Time.deltaTime * bobSpeed;
+            bobTimer += Time.deltaTime * currentBobSpeed;
             
             // Calculate bobbing offset using sine waves
-            float yBob = Mathf.Sin(bobTimer) * bobAmount;
-            float xBob = Mathf.Cos(bobTimer * 0.5f) * bobAmount * 0.5f; // Horizontal sway, less intense
+            float yBob = Mathf.Sin(bobTimer) * currentBobAmount;
+            float xBob = Mathf.Cos(bobTimer * 0.5f) * currentBobAmount * 0.5f; // Horizontal sway, less intense
             
             // Apply bobbing to camera position
             Vector3 bobOffset = new Vector3(xBob, yBob, 0f);
@@ -356,6 +389,114 @@ public class Movement : NetworkBehaviour
             
             // Reset bob timer gradually when not moving
             bobTimer = Mathf.Lerp(bobTimer, 0f, Time.deltaTime * 2f);
+        }
+    }
+    
+    void HandleStamina()
+    {
+        // Store previous sprinting state for audio feedback
+        bool wasSprinting = isSprinting;
+        
+        // Manual check for sprint input as backup (in case callback fails)
+        bool manualSprintCheck = false;
+        if (sprintAction != null)
+        {
+            manualSprintCheck = sprintAction.IsPressed();
+        }
+        
+        // Use manual check if it differs from callback value
+        if (manualSprintCheck != isSprintPressed)
+        {
+    
+            isSprintPressed = manualSprintCheck;
+        }
+        
+        // Check if player is trying to sprint
+        bool wantsToSprint = isSprintPressed && moveInput.magnitude > 0.1f && isGrounded;
+        
+        
+        // Determine if we can/should sprint
+        if (wantsToSprint && currentStamina >= minStaminaToSprint && canSprint)
+        {
+            // Start sprinting if not already sprinting
+            if (!isSprinting)
+            {
+                isSprinting = true;
+                Debug.Log("Started sprinting");
+                PlaySprintStartSound();
+            }
+            
+            // Only drain stamina if we're actually sprinting
+            if (isSprinting)
+            {
+                currentStamina -= sprintStaminaDrain * Time.deltaTime;
+                currentStamina = Mathf.Max(0f, currentStamina);
+                
+                // If stamina runs out, stop sprinting and prevent immediate restart
+                if (currentStamina <= 0f)
+                {
+                    isSprinting = false;
+                    canSprint = false;
+                    Debug.Log("Stamina exhausted - stopped sprinting");
+                    PlayLowStaminaSound();
+                }
+            }
+        }
+        else
+        {
+            // Stop sprinting immediately when not wanting to sprint
+            if (isSprinting)
+            {
+                isSprinting = false;
+                Debug.Log("Stopped sprinting - conditions not met");
+                PlaySprintStopSound();
+            }
+            
+            // Regenerate stamina when not sprinting
+            if (currentStamina < maxStamina)
+            {
+                currentStamina += staminaRegenRate * Time.deltaTime;
+                currentStamina = Mathf.Min(maxStamina, currentStamina);
+            }
+            
+            // Allow sprinting again when stamina is above minimum threshold
+            if (currentStamina >= minStaminaToSprint)
+            {
+                canSprint = true;
+            }
+        }
+        
+        // Failsafe: Reset sprint state if Left Shift is not actually pressed
+        if (isSprinting && !UnityEngine.Input.GetKey(KeyCode.LeftShift))
+        {
+            Debug.Log("Failsafe: Force stopping sprint - Left Shift not detected");
+            isSprinting = false;
+            isSprintPressed = false;
+            PlaySprintStopSound();
+        }
+    }
+    
+    void PlaySprintStartSound()
+    {
+        if (audioSource != null && sprintStartSound != null)
+        {
+            audioSource.PlayOneShot(sprintStartSound);
+        }
+    }
+    
+    void PlaySprintStopSound()
+    {
+        if (audioSource != null && sprintStopSound != null)
+        {
+            audioSource.PlayOneShot(sprintStopSound);
+        }
+    }
+    
+    void PlayLowStaminaSound()
+    {
+        if (audioSource != null && lowStaminaSound != null)
+        {
+            audioSource.PlayOneShot(lowStaminaSound);
         }
     }
     
@@ -384,9 +525,22 @@ public class Movement : NetworkBehaviour
         lookInput = value.Get<Vector2>();
     }
     
+    // Input System callback for Sprint action
+    public void OnSprint(InputValue value)
+    {
+        if (!IsOwner) return;
+        isSprintPressed = value.isPressed;
+    }
+    
     // Handle collisions with other players to prevent spinning
     void OnCollisionEnter(Collision collision)
     {
+        // Log collision for debugging, especially for hunters
+        PlayerData playerData = GetComponent<PlayerData>();
+        if (playerData != null && playerData.IsHunter)
+        {
+        }
+        
         // Check if we collided with another player
         if (collision.gameObject.GetComponent<Movement>() != null)
         {
