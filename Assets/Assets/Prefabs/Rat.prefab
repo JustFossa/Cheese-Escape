@@ -200,8 +200,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   moveSpeed: 5
-  jumpForce: 10
+  sprintSpeed: 8
   mouseSensitivity: 2
+  maxStamina: 100
+  staminaRegenRate: 20
+  sprintStaminaDrain: 25
+  minStaminaToSprint: 10
   groundCheck: {fileID: 7261402434171089576}
   groundCheckDistance: 0.4
   groundLayerMask:
@@ -214,6 +218,15 @@ MonoBehaviour:
   angularDrag: 10
   playerMass: 1
   collisionDamping: 0.5
+  audioSource: {fileID: 0}
+  sprintStartSound: {fileID: 0}
+  sprintStopSound: {fileID: 0}
+  lowStaminaSound: {fileID: 0}
+  interactionRange: 10
+  interactableLayerMask:
+    serializedVersion: 2
+    m_Bits: 0
+  interactKey: 101
   cameraTransform: {fileID: 7355909088530846973}
   playerModel: {fileID: 6484019525685219944}
 --- !u!114 &8237981947980798363

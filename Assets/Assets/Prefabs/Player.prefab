@@ -55,7 +55,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 2790922502
+  GlobalObjectIdHash: 4290206143
   InScenePlacedSourceGlobalObjectIdHash: 4290206143
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -147,8 +147,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   moveSpeed: 5
-  jumpForce: 10
+  sprintSpeed: 8
   mouseSensitivity: 2
+  maxStamina: 100
+  staminaRegenRate: 20
+  sprintStaminaDrain: 25
+  minStaminaToSprint: 10
   groundCheck: {fileID: 2667406381107114740}
   groundCheckDistance: 0.4
   groundLayerMask:
@@ -161,6 +165,15 @@ MonoBehaviour:
   angularDrag: 10
   playerMass: 1
   collisionDamping: 0.5
+  audioSource: {fileID: 0}
+  sprintStartSound: {fileID: 0}
+  sprintStopSound: {fileID: 0}
+  lowStaminaSound: {fileID: 0}
+  interactionRange: 10
+  interactableLayerMask:
+    serializedVersion: 2
+    m_Bits: 64
+  interactKey: 101
   cameraTransform: {fileID: 9096546235982792069}
   playerModel: {fileID: 1008460850629523145}
 --- !u!114 &1635103618910987924
@@ -310,6 +323,8 @@ MonoBehaviour:
         byte0059: 0
         byte0060: 0
         byte0061: 0
+  isHunter:
+    m_InternalValue: 0
 --- !u!1 &1008460850629523145
 GameObject:
   m_ObjectHideFlags: 0

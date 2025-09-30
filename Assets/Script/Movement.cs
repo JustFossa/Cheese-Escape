@@ -38,6 +38,11 @@ public class Movement : NetworkBehaviour
     public AudioClip sprintStartSound;
     public AudioClip sprintStopSound;
     public AudioClip lowStaminaSound;
+    
+    [Header("Interaction Settings")]
+    public float interactionRange = 3f;
+    public LayerMask interactableLayerMask = -1; // All layers by default
+    public KeyCode interactKey = KeyCode.E;
 
 
     private Rigidbody rb;
@@ -51,9 +56,11 @@ public class Movement : NetworkBehaviour
     private InputAction moveAction;
     private InputAction lookAction;
     private InputAction sprintAction;
+    private InputAction interactAction;
     private Vector2 moveInput;
     private Vector2 lookInput;
     private bool isSprintPressed;
+    private bool isInteractPressed;
     
     // Stamina variables
     private float currentStamina;
@@ -70,6 +77,11 @@ public class Movement : NetworkBehaviour
     private Vector3 cameraOriginalPosition;
     private float bobTimer = 0f;
     private bool isMoving = false;
+    
+    // Interaction variables
+    private IInteractable currentInteractable;
+    private float interactionTimer = 0f;
+    private bool isInteracting = false;
 
     public override void OnNetworkSpawn()
     {
@@ -137,10 +149,16 @@ public class Movement : NetworkBehaviour
             playerInput = GetComponent<PlayerInput>();
             if (playerInput != null)
             {
-                playerInput.enabled = true;
-                moveAction = playerInput.actions["Move"];
-                lookAction = playerInput.actions["Look"];
-                sprintAction = playerInput.actions["Sprint"];
+                // Force enable and reinitialize the input system
+                playerInput.enabled = false; // Disable first
+                playerInput.enabled = true;  // Then re-enable to force refresh
+                
+                // Wait a frame and setup actions to ensure proper initialization
+                StartCoroutine(SetupInputActionsDelayed());
+            }
+            else
+            {
+                Debug.LogError($"PlayerInput component not found on {gameObject.name}! Input will not work properly.", this);
             }
             
             // Lock cursor to center of screen
@@ -192,6 +210,90 @@ public class Movement : NetworkBehaviour
             }
             
             
+        }
+    }
+    
+    private IEnumerator SetupInputActionsDelayed()
+    {
+        // Wait a frame to ensure PlayerInput is fully initialized
+        yield return null;
+        
+        if (playerInput != null && playerInput.actions != null)
+        {
+            // Setup input actions with error handling
+            try
+            {
+                moveAction = playerInput.actions["Move"];
+                lookAction = playerInput.actions["Look"];
+                sprintAction = playerInput.actions["Sprint"];
+                
+                // Try to get interaction action if it exists
+                try
+                {
+                    interactAction = playerInput.actions["Interact"];
+                }
+                catch
+                {
+                    interactAction = null;
+                    Debug.Log("Interact action not found in Input Actions, using manual key detection");
+                }
+                
+                // Enable all actions
+                if (moveAction != null) moveAction.Enable();
+                if (lookAction != null) lookAction.Enable();
+                if (sprintAction != null) sprintAction.Enable();
+                if (interactAction != null) interactAction.Enable();
+                
+                Debug.Log($"Input actions successfully initialized for player {OwnerClientId}");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to setup input actions: {e.Message}", this);
+                
+                // Fallback: try to reinitialize PlayerInput component after a longer delay
+                StartCoroutine(RetryInputSetupDelayed());
+            }
+        }
+        else
+        {
+            Debug.LogWarning("PlayerInput or actions are null, retrying input setup...");
+            yield return new WaitForSeconds(0.5f);
+            RetryInputSetup();
+        }
+    }
+    
+    private IEnumerator RetryInputSetupDelayed()
+    {
+        yield return new WaitForSeconds(0.5f);
+        RetryInputSetup();
+    }
+    
+    private void RetryInputSetup()
+    {
+        if (playerInput == null)
+        {
+            playerInput = GetComponent<PlayerInput>();
+        }
+        
+        if (playerInput != null)
+        {
+            playerInput.enabled = false;
+            playerInput.enabled = true;
+            StartCoroutine(SetupInputActionsDelayed());
+        }
+        else
+        {
+            Debug.LogError("PlayerInput component is missing! Player input will not work.");
+        }
+    }
+    
+    // Public method to force input system reinitialization (can be called when hunter status changes)
+    public void ForceInputReinitialize()
+    {
+        if (IsOwner)
+        {
+            Debug.Log($"Force reinitializing input for player {OwnerClientId}");
+            SetupPlayerComponents();
         }
     }
     
@@ -267,6 +369,14 @@ public class Movement : NetworkBehaviour
         // Only process input if this is the local player
         if (!IsOwner || cameraTransform == null) return;
         
+        // Check if input actions are null and reinitialize if needed
+        if (moveAction == null || lookAction == null || sprintAction == null)
+        {
+            Debug.LogWarning($"Input actions are null for player {OwnerClientId}, attempting to reinitialize...");
+            ForceInputReinitialize();
+            return; // Skip this frame while reinitializing
+        }
+        
         // Handle stamina system
         HandleStamina();
         
@@ -290,6 +400,9 @@ public class Movement : NetworkBehaviour
         
         // Handle view bobbing
         HandleViewBobbing();
+        
+        // Handle object interaction
+        HandleInteraction();
     }
     
     void FixedUpdate()
@@ -495,7 +608,16 @@ public class Movement : NetworkBehaviour
     public void OnMove(InputValue value)
     {
         if (!IsOwner) return;
-        moveInput = value.Get<Vector2>();
+        Vector2 newMoveInput = value.Get<Vector2>();
+        
+        // Debug logging for hunters to track input issues
+        PlayerData playerData = GetComponent<PlayerData>();
+        if (playerData != null && playerData.IsHunter && newMoveInput.magnitude > 0.1f)
+        {
+            Debug.Log($"Hunter {OwnerClientId} move input: {newMoveInput}");
+        }
+        
+        moveInput = newMoveInput;
     }
     
     // Input System callback for Look action
@@ -510,6 +632,20 @@ public class Movement : NetworkBehaviour
     {
         if (!IsOwner) return;
         isSprintPressed = value.isPressed;
+        
+        // Debug logging for hunters
+        PlayerData playerData = GetComponent<PlayerData>();
+        if (playerData != null && playerData.IsHunter)
+        {
+            Debug.Log($"Hunter {OwnerClientId} sprint input: {value.isPressed}");
+        }
+    }
+    
+    // Input System callback for Interact action (if it exists in Input Actions)
+    public void OnInteract(InputValue value)
+    {
+        if (!IsOwner) return;
+        isInteractPressed = value.isPressed;
     }
     
     // Handle collisions with other players to prevent spinning
@@ -550,7 +686,140 @@ public class Movement : NetworkBehaviour
         }
     }
     
-    // Visual debugging for ground check
+    void HandleInteraction()
+    {
+        // Get interaction input (try Input Actions first, fallback to KeyCode)
+        bool interactInput = false;
+        if (interactAction != null)
+        {
+            interactInput = interactAction.IsPressed();
+        }
+        else
+        {
+            interactInput = Input.GetKey(interactKey);
+        }
+        
+        // If we have manual input, override the callback value
+        if (interactInput != isInteractPressed)
+        {
+            isInteractPressed = interactInput;
+        }
+        
+        // Raycast from camera to detect interactable objects
+        IInteractable detectedInteractable = GetInteractableInView();
+        
+        // Handle interactable object changes
+        if (detectedInteractable != currentInteractable)
+        {
+            // Cancel interaction with previous object
+            if (currentInteractable != null && isInteracting)
+            {
+                currentInteractable.OnInteractionCancel();
+                isInteracting = false;
+                interactionTimer = 0f;
+            }
+            
+            currentInteractable = detectedInteractable;
+        }
+        
+        // Handle interaction logic
+        if (currentInteractable != null && currentInteractable.CanInteract)
+        {
+            if (isInteractPressed)
+            {
+                if (!isInteracting)
+                {
+                    // Start interaction
+                    isInteracting = true;
+                    interactionTimer = 0f;
+                    currentInteractable.OnInteractionStart();
+                }
+                
+                // Update interaction progress
+                interactionTimer += Time.deltaTime;
+                float progress = Mathf.Clamp01(interactionTimer / currentInteractable.InteractionDuration);
+                currentInteractable.OnInteractionProgress(progress);
+                
+                // Check if interaction is complete
+                if (interactionTimer >= currentInteractable.InteractionDuration)
+                {
+                    currentInteractable.OnInteractionComplete();
+                    isInteracting = false;
+                    interactionTimer = 0f;
+                }
+            }
+            else if (isInteracting)
+            {
+                // Cancel interaction if E is released
+                currentInteractable.OnInteractionCancel();
+                isInteracting = false;
+                interactionTimer = 0f;
+            }
+        }
+        else if (isInteracting)
+        {
+            // Cancel interaction if object is no longer interactable or in view
+            if (currentInteractable != null)
+            {
+                currentInteractable.OnInteractionCancel();
+            }
+            isInteracting = false;
+            interactionTimer = 0f;
+        }
+    }
+    
+    IInteractable GetInteractableInView()
+    {
+        // Cast multiple rays accounting for camera rotation to create a small cone of detection
+        Vector3 cameraPos = cameraTransform.position;
+        Vector3 cameraForward = cameraTransform.forward;
+        Vector3 cameraRight = cameraTransform.right;
+        Vector3 cameraUp = cameraTransform.up;
+        
+        // Define the rays to cast (center + small offsets for rotation tolerance)
+        Vector3[] rayDirections = new Vector3[]
+        {
+            cameraForward, // Center ray
+            (cameraForward + cameraRight * 0.1f).normalized, // Slightly right
+            (cameraForward - cameraRight * 0.1f).normalized, // Slightly left
+            (cameraForward + cameraUp * 0.1f).normalized, // Slightly up
+            (cameraForward - cameraUp * 0.1f).normalized, // Slightly down
+        };
+        
+        IInteractable closestInteractable = null;
+        float closestDistance = float.MaxValue;
+        
+        // Cast rays in multiple directions to account for rotation
+        foreach (Vector3 direction in rayDirections)
+        {
+            Ray ray = new Ray(cameraPos, direction);
+            RaycastHit hit;
+
+            if (Physics.Raycast(ray, out hit, interactionRange, interactableLayerMask))
+            {
+                // Check if the hit object has an IInteractable component
+                IInteractable interactable = hit.collider.GetComponent<IInteractable>();
+
+                if (interactable != null && hit.distance < closestDistance)
+                {
+                    closestInteractable = interactable;
+                    closestDistance = hit.distance;
+
+                }
+           
+            }
+        }
+        
+        return closestInteractable;
+    }
+    
+    // Public properties for UI access
+    public IInteractable CurrentInteractable => currentInteractable;
+    public bool IsInteracting => isInteracting;
+    public float InteractionProgress => currentInteractable != null ? 
+        Mathf.Clamp01(interactionTimer / currentInteractable.InteractionDuration) : 0f;
+    
+    // Visual debugging for ground check and interaction ray
     void OnDrawGizmosSelected()
     {
         if (groundCheck != null)
@@ -558,6 +827,13 @@ public class Movement : NetworkBehaviour
             Gizmos.color = isGrounded ? Color.green : Color.red;
             Gizmos.DrawWireSphere(groundCheck.position, 0.1f);
             Gizmos.DrawLine(groundCheck.position, groundCheck.position + Vector3.down * groundCheckDistance);
+        }
+        
+        // Draw interaction ray
+        if (cameraTransform != null)
+        {
+            Gizmos.color = currentInteractable != null ? Color.green : Color.blue;
+            Gizmos.DrawRay(cameraTransform.position, cameraTransform.forward * interactionRange);
         }
     }
 }

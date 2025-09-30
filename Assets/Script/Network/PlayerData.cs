@@ -135,6 +135,24 @@ public class PlayerData : NetworkBehaviour
         {
             Debug.Log($"{playerName.Value} is no longer the hunter");
         }
+        
+        // Fix for hunter input issues: Reinitialize input system when hunter status changes
+        if (IsOwner)
+        {
+            Movement movement = GetComponent<Movement>();
+            if (movement != null)
+            {
+                // Wait a frame to ensure the status change is fully processed
+                StartCoroutine(ReinitializeInputDelayed(movement));
+            }
+        }
+    }
+    
+    private System.Collections.IEnumerator ReinitializeInputDelayed(Movement movement)
+    {
+        yield return null; // Wait one frame
+        movement.ForceInputReinitialize();
+        Debug.Log($"Reinitialized input system for {playerName.Value} after hunter status change");
     }
 
     // Public method to change player name (can be called from UI)
