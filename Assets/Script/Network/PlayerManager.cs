@@ -401,6 +401,17 @@ public class PlayerManager : NetworkBehaviour
         
         if (networkObject != null)
         {
+            // Verify essential components exist before spawning
+            if (isHunter)
+            {
+                if (!ValidateHunterPrefabComponents(gamePlayerObj))
+                {
+                    Debug.LogError($"Hunter prefab is missing essential components! Spawning failed for client {clientId}");
+                    Destroy(gamePlayerObj);
+                    return;
+                }
+            }
+            
             // Spawn as player object for this client
             networkObject.SpawnAsPlayerObject(clientId);
             print($"Spawned game player for client {clientId} at position {spawnPosition}");
@@ -443,11 +454,151 @@ public class PlayerManager : NetworkBehaviour
             // Set the hunter status
             playerData.SetHunterStatusServerRpc(true);
             print($"Successfully set hunter status for client {clientId}");
+            
+            // Additional fix: Ensure hunter's movement component is properly initialized
+            yield return new WaitForSeconds(0.2f); // Wait a bit longer for network sync
+            EnsureHunterComponentsInitialized(clientId, playerData);
+            
+            // Send client RPC to ensure input is properly initialized on the client
+            EnsureHunterInputInitializedClientRpc(clientId);
         }
         else
         {
             print($"Failed to set hunter status for client {clientId} - PlayerData not found after waiting");
         }
+    }
+    
+    // Additional method to ensure hunter components are properly initialized
+    private void EnsureHunterComponentsInitialized(ulong clientId, PlayerData playerData)
+    {
+        if (playerData == null) return;
+        
+        // Get the Movement component
+        Movement movement = playerData.GetComponent<Movement>();
+        if (movement != null)
+        {
+            print($"Ensuring hunter {clientId} movement component is initialized");
+            
+            // Force reinitialize input system for the hunter
+            // This will be called on the server, but the method checks IsOwner internally
+            movement.ForceInputReinitialize();
+            
+            // Also ensure the PlayerInput component exists and is enabled
+            UnityEngine.InputSystem.PlayerInput playerInput = movement.GetComponent<UnityEngine.InputSystem.PlayerInput>();
+            if (playerInput != null)
+            {
+                print($"Hunter {clientId} PlayerInput found - ensuring it's enabled");
+                playerInput.enabled = true;
+            }
+            else
+            {
+                Debug.LogError($"Hunter {clientId} is missing PlayerInput component! This will cause movement issues.");
+            }
+        }
+        else
+        {
+            Debug.LogError($"Hunter {clientId} is missing Movement component!");
+        }
+    }
+    
+    // Client RPC to ensure hunter input is properly initialized on the client side
+    [ClientRpc]
+    private void EnsureHunterInputInitializedClientRpc(ulong targetClientId)
+    {
+        // Only process this on the target client
+        if (NetworkManager.Singleton.LocalClientId != targetClientId) return;
+        
+        print($"Received hunter input initialization RPC for client {targetClientId}");
+        
+        // Find the local player's movement component
+        Movement[] movements = FindObjectsOfType<Movement>();
+        foreach (Movement movement in movements)
+        {
+            if (movement.IsOwner)
+            {
+                print($"Found local movement component, forcing input reinitialization for hunter {targetClientId}");
+                
+                // Use a coroutine to ensure proper timing
+                StartCoroutine(DelayedHunterInputInit(movement));
+                break;
+            }
+        }
+    }
+    
+    // Coroutine to handle delayed hunter input initialization
+    private IEnumerator DelayedHunterInputInit(Movement movement)
+    {
+        // Wait a moment to ensure everything is ready
+        yield return new WaitForSeconds(0.3f);
+        
+        if (movement != null)
+        {
+            print("Executing delayed hunter input initialization");
+            movement.ForceInputReinitialize();
+            
+            // Double-check after another moment
+            yield return new WaitForSeconds(0.5f);
+            
+            // Verify PlayerInput component is working
+            UnityEngine.InputSystem.PlayerInput playerInput = movement.GetComponent<UnityEngine.InputSystem.PlayerInput>();
+            if (playerInput != null && playerInput.enabled)
+            {
+                print("Hunter input system verified as working");
+            }
+            else
+            {
+                Debug.LogWarning("Hunter input system may still have issues - attempting final fix");
+                movement.ForceInputReinitialize();
+            }
+        }
+    }
+    
+    // Method to validate that the hunter prefab has all necessary components
+    private bool ValidateHunterPrefabComponents(GameObject hunterObj)
+    {
+        bool isValid = true;
+        
+        // Check for PlayerData component
+        if (hunterObj.GetComponent<PlayerData>() == null)
+        {
+            Debug.LogError("Hunter prefab is missing PlayerData component!");
+            isValid = false;
+        }
+        
+        // Check for Movement component
+        if (hunterObj.GetComponent<Movement>() == null)
+        {
+            Debug.LogError("Hunter prefab is missing Movement component!");
+            isValid = false;
+        }
+        
+        // Check for PlayerInput component
+        if (hunterObj.GetComponent<UnityEngine.InputSystem.PlayerInput>() == null)
+        {
+            Debug.LogError("Hunter prefab is missing PlayerInput component!");
+            isValid = false;
+        }
+        
+        // Check for NetworkObject component
+        if (hunterObj.GetComponent<NetworkObject>() == null)
+        {
+            Debug.LogError("Hunter prefab is missing NetworkObject component!");
+            isValid = false;
+        }
+        
+        // Check for Rigidbody component
+        if (hunterObj.GetComponent<Rigidbody>() == null)
+        {
+            Debug.LogError("Hunter prefab is missing Rigidbody component!");
+            isValid = false;
+        }
+        
+        if (isValid)
+        {
+            print("Hunter prefab component validation passed");
+        }
+        
+        return isValid;
     }
 
     // Method to calculate spawn position for players
@@ -470,5 +621,40 @@ public class PlayerManager : NetworkBehaviour
 
         int index = (int)(clientId % (ulong)spawnPoints.Length);
         return spawnPoints[index];
+    }
+    
+    // Public method to fix hunter movement issues at runtime
+    [ServerRpc(RequireOwnership = false)]
+    public void FixHunterMovementServerRpc(ulong clientId)
+    {
+        if (!IsServer) return;
+        
+        print($"Attempting to fix hunter movement for client {clientId}");
+        
+        PlayerData playerData = GetPlayer(clientId);
+        if (playerData != null && playerData.IsHunter)
+        {
+            // Force reinitialization of hunter components
+            EnsureHunterComponentsInitialized(clientId, playerData);
+            
+            // Send client RPC for client-side fixes
+            EnsureHunterInputInitializedClientRpc(clientId);
+            
+            print($"Hunter movement fix initiated for client {clientId}");
+        }
+        else
+        {
+            print($"Client {clientId} is not a hunter or not found");
+        }
+    }
+    
+    // Public method that can be called from UI or other systems to fix hunter issues
+    public void RequestHunterMovementFix()
+    {
+        if (NetworkManager.Singleton.IsClient)
+        {
+            ulong localClientId = NetworkManager.Singleton.LocalClientId;
+            FixHunterMovementServerRpc(localClientId);
+        }
     }
 }
