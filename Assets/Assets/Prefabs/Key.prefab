@@ -26,17 +26,17 @@ PrefabInstance:
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_LocalPosition.x
-      value: -74.02608
+      value: -64.24218
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.00000011920929
+      value: 0.9929501
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_LocalPosition.z
-      value: -32.650078
+      value: -59.80148
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
@@ -46,17 +46,17 @@ PrefabInstance:
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
@@ -77,17 +77,17 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 9481805bdbaa04d48a9b2d5d47583afb, type: 2}
+      objectReference: {fileID: 2100000, guid: 3c0aedc08c2e32a4d95aa44cd440475f, type: 2}
     - target: {fileID: -1461304994638716399, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 9481805bdbaa04d48a9b2d5d47583afb, type: 2}
+      objectReference: {fileID: 2100000, guid: 3c0aedc08c2e32a4d95aa44cd440475f, type: 2}
     - target: {fileID: -678588488315902003, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 9481805bdbaa04d48a9b2d5d47583afb, type: 2}
+      objectReference: {fileID: 2100000, guid: 3c0aedc08c2e32a4d95aa44cd440475f, type: 2}
     - target: {fileID: 919132149155446097, guid: 394129112b4650b4eacac99b7e453036,
         type: 3}
       propertyPath: m_Name
@@ -97,7 +97,7 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 9481805bdbaa04d48a9b2d5d47583afb, type: 2}
+      objectReference: {fileID: 2100000, guid: 3c0aedc08c2e32a4d95aa44cd440475f, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -110,6 +110,10 @@ PrefabInstance:
         type: 3}
       insertIndex: -1
       addedObject: {fileID: 2457647545624482890}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 394129112b4650b4eacac99b7e453036,
+        type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 5065729745390807481}
   m_SourcePrefab: {fileID: 100100000, guid: 394129112b4650b4eacac99b7e453036, type: 3}
 --- !u!1 &8398349702310056334 stripped
 GameObject:
@@ -129,8 +133,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 468923986
-  InScenePlacedSourceGlobalObjectIdHash: 0
+  GlobalObjectIdHash: 3578680243
+  InScenePlacedSourceGlobalObjectIdHash: 1009624440
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
   ActiveSceneSynchronization: 0
@@ -150,6 +154,27 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0bb493074672bc54289465b2f8eb20fc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  keyId: 0
-  keyName: Key
+  keyId: 4
+  keyName: Pink
   keyColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+--- !u!65 &5065729745390807481
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8398349702310056334}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 25.5, y: 1, z: 33.44}
+  m_Center: {x: 0, y: 0, z: 0}

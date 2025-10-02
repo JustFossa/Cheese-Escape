@@ -53,6 +53,19 @@ public class PlayerManager : NetworkBehaviour
         {
             NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
             NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
+            
+            // For the host, manually trigger lobby player spawning if we're in lobby
+            // This ensures the host gets a lobby player even if OnClientConnected wasn't called
+            if (LobbyManager.Instance != null && !LobbyManager.Instance.IsGameStarted)
+            {
+                // Check if host already has a lobby player spawned
+                ulong hostClientId = NetworkManager.Singleton.LocalClientId;
+                if (!lobbyPlayers.ContainsKey(hostClientId))
+                {
+                    print($"PlayerManager spawned on server - ensuring host (client {hostClientId}) has lobby player");
+                    StartCoroutine(EnsureHostLobbyPlayerSpawned(hostClientId));
+                }
+            }
         }
     }
 
@@ -73,6 +86,13 @@ public class PlayerManager : NetworkBehaviour
         if (LobbyManager.Instance != null && !LobbyManager.Instance.IsGameStarted)
         {
             // We're in lobby - spawn lobby player
+            // Check if this client already has a lobby player to avoid duplicates
+            if (lobbyPlayers.ContainsKey(clientId))
+            {
+                print($"Client {clientId} already has a lobby player, skipping spawn");
+                return;
+            }
+            
             // For the host (client ID 0), delay spawning slightly to avoid race conditions
             if (clientId == 0 && NetworkManager.Singleton.IsHost)
             {
@@ -188,6 +208,15 @@ public class PlayerManager : NetworkBehaviour
     {
         if (!IsServer || lobbyPlayerPrefab == null) return;
         
+        // Final check to prevent duplicate spawning
+        if (lobbyPlayers.ContainsKey(clientId))
+        {
+            print($"Attempted to spawn lobby player for client {clientId} but one already exists");
+            return;
+        }
+        
+        print($"Spawning lobby player for client {clientId}");
+        
         // Instantiate the lobby player prefab
         GameObject lobbyPlayerObj = Instantiate(lobbyPlayerPrefab);
         NetworkObject networkObject = lobbyPlayerObj.GetComponent<NetworkObject>();
@@ -196,12 +225,14 @@ public class PlayerManager : NetworkBehaviour
         {
             // Spawn as player object for this client
             networkObject.SpawnAsPlayerObject(clientId);
+            print($"Successfully spawned lobby player NetworkObject for client {clientId}");
             
             // Note: Don't register here - let the LobbyPlayer register itself when it spawns
             // This prevents double registration
         }
         else
         {
+            print($"Error: Lobby player prefab for client {clientId} doesn't have NetworkObject component");
             Destroy(lobbyPlayerObj);
         }
     }
@@ -213,10 +244,45 @@ public class PlayerManager : NetworkBehaviour
         yield return null;
         
         // Wait a bit more to make sure everything is initialized
-        yield return new WaitForSeconds(0.1f);
+        yield return new WaitForSeconds(0.2f);
         
-        // Now spawn the lobby player
-        SpawnLobbyPlayer(clientId);
+        // Double-check that we don't already have a lobby player for this client
+        if (lobbyPlayers.ContainsKey(clientId))
+        {
+            print($"Client {clientId} already has a lobby player after delay, skipping spawn");
+            yield break;
+        }
+        
+        // Ensure we're still in lobby state
+        if (LobbyManager.Instance != null && !LobbyManager.Instance.IsGameStarted)
+        {
+            // Now spawn the lobby player
+            SpawnLobbyPlayer(clientId);
+        }
+        else
+        {
+            print($"No longer in lobby state, skipping delayed spawn for client {clientId}");
+        }
+    }
+    
+    // Coroutine to ensure the host gets a lobby player during PlayerManager initialization
+    private IEnumerator EnsureHostLobbyPlayerSpawned(ulong hostClientId)
+    {
+        // Wait a bit to ensure everything is initialized
+        yield return new WaitForSeconds(0.3f);
+        
+        // Check again if host still needs a lobby player
+        if (!lobbyPlayers.ContainsKey(hostClientId) && 
+            LobbyManager.Instance != null && 
+            !LobbyManager.Instance.IsGameStarted)
+        {
+            print($"Host (client {hostClientId}) still needs lobby player - spawning now");
+            SpawnLobbyPlayer(hostClientId);
+        }
+        else
+        {
+            print($"Host (client {hostClientId}) already has lobby player or game has started");
+        }
     }
     
     // Method to register a lobby player (called by LobbyPlayer when it spawns)
@@ -224,13 +290,27 @@ public class PlayerManager : NetworkBehaviour
     {
         if (IsServer && lobbyPlayer != null)
         {
+            // Check if this client already has a registered lobby player
+            if (lobbyPlayers.ContainsKey(clientId))
+            {
+                print($"Warning: Client {clientId} already has a registered lobby player ({lobbyPlayers[clientId].PlayerName}), replacing with new one ({lobbyPlayer.PlayerName})");
+            }
+            
             lobbyPlayers[clientId] = lobbyPlayer;
             lobbyPlayerCount.Value = lobbyPlayers.Count;
 
             // Notify all clients about the new lobby player
             OnLobbyPlayerJoined?.Invoke(clientId, lobbyPlayer.PlayerName);
             NotifyLobbyPlayerJoinedClientRpc(clientId, lobbyPlayer.PlayerName);
-            print("Registered lobby player: " + lobbyPlayer.PlayerName);
+            print($"Successfully registered lobby player: {lobbyPlayer.PlayerName} (Client {clientId}). Total lobby players: {lobbyPlayers.Count}");
+        }
+        else if (!IsServer)
+        {
+            print($"Cannot register lobby player {lobbyPlayer?.PlayerName} - not server");
+        }
+        else
+        {
+            print("Cannot register lobby player - lobbyPlayer is null");
         }
     }
     
@@ -246,7 +326,15 @@ public class PlayerManager : NetworkBehaviour
             // Notify all clients about the lobby player leaving
             OnLobbyPlayerLeft?.Invoke(clientId, playerName);
             NotifyLobbyPlayerLeftClientRpc(clientId, playerName);
-            print("Unregistered lobby player: " + playerName);
+            print($"Unregistered lobby player: {playerName} (Client {clientId}). Remaining lobby players: {lobbyPlayers.Count}");
+        }
+        else if (!IsServer)
+        {
+            print($"Cannot unregister lobby player for client {clientId} - not server");
+        }
+        else
+        {
+            print($"Cannot unregister lobby player for client {clientId} - not found in registry");
         }
     }
     

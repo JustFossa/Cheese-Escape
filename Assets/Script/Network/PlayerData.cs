@@ -280,4 +280,103 @@ public class PlayerData : NetworkBehaviour
             }
         }
     }
+
+    // Method called when player reaches the exit (wins the game)
+    public void ReachExit()
+    {
+        // Only non-hunters can win by reaching the exit
+        if (IsHunter)
+        {
+            Debug.Log($"Hunter {PlayerName} reached exit but hunters cannot win this way");
+            return;
+        }
+
+        Debug.Log($"Player {PlayerName} reached the exit and won the game!");
+
+        // If this is the local player, handle their victory
+        if (IsOwner)
+        {
+            Debug.Log("Local player won the game - returning to main menu");
+            StartCoroutine(HandlePlayerVictory());
+        }
+
+        // Notify all players about the victory
+        if (IsServer)
+        {
+            NotifyPlayerVictoryClientRpc(PlayerName);
+        }
+        else
+        {
+            NotifyPlayerVictoryServerRpc();
+        }
+    }
+
+    // Server RPC to notify about player victory
+    [ServerRpc(RequireOwnership = false)]
+    private void NotifyPlayerVictoryServerRpc()
+    {
+        NotifyPlayerVictoryClientRpc(PlayerName);
+    }
+
+    // Client RPC to notify all players about the victory
+    [ClientRpc]
+    private void NotifyPlayerVictoryClientRpc(FixedString64Bytes winnerName)
+    {
+        Debug.Log($"Game Over! {winnerName} escaped and won the game!");
+        
+        // You can add UI elements here to show victory screen
+        // For now, all players will return to main menu after a delay
+        if (!IsOwner) // Non-winner players get a different treatment
+        {
+            StartCoroutine(HandleGameEndForOthers(winnerName.ToString()));
+        }
+    }
+
+    // Coroutine to handle victory sequence for the winning player
+    private System.Collections.IEnumerator HandlePlayerVictory()
+    {
+        // Unlock cursor
+        Cursor.lockState = CursorLockMode.None;
+        
+        // Wait a moment to show victory
+        yield return new WaitForSeconds(2f);
+        
+        // Shutdown network manager
+        if (NetworkManager.Singleton != null)
+        {
+            Debug.Log("Shutting down NetworkManager for victorious player");
+            NetworkManager.Singleton.Shutdown();
+        }
+        
+        // Wait for network shutdown
+        yield return new WaitForSeconds(0.3f);
+        
+        // Load main menu
+        Debug.Log("Loading main menu scene for victorious player");
+        UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
+    }
+
+    // Coroutine to handle game end for other players
+    private System.Collections.IEnumerator HandleGameEndForOthers(string winnerName)
+    {
+        // Wait a moment to process the victory message
+        yield return new WaitForSeconds(3f);
+        
+        // Unlock cursor
+        Cursor.lockState = CursorLockMode.None;
+        
+        // Shutdown network manager
+        if (NetworkManager.Singleton != null)
+        {
+            Debug.Log($"Game ended - {winnerName} won. Shutting down NetworkManager");
+            NetworkManager.Singleton.Shutdown();
+        }
+        
+        // Wait for network shutdown
+        yield return new WaitForSeconds(0.3f);
+        
+        // Load main menu
+        Debug.Log("Loading main menu scene after game end");
+        UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
+    }
 }

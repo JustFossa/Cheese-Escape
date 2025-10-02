@@ -96,7 +96,7 @@ public class InteractionUI : MonoBehaviour
         bool isInteracting = playerMovement.IsInteracting;
         float progress = playerMovement.InteractionProgress;
         
-        print($"CurrentInteractable: {currentInteractable}, IsInteracting: {isInteracting}, Progress: {progress}");
+
 
         // Handle UI visibility and animations
         HandleUIVisibility(currentInteractable);

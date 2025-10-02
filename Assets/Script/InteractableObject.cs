@@ -16,7 +16,12 @@ public class InteractableObject : MonoBehaviour, IInteractable
     [SerializeField] private AudioClip interactionStartSound;
     [SerializeField] private AudioClip interactionCompleteSound;
     [SerializeField] private AudioClip interactionCancelSound;
-    
+
+    [Header("Cheese Collection")]
+    [SerializeField] private int cheeseValue = 1; // Only used if this is a cheese object
+
+    public GameObject doorObject;
+
     private Renderer objectRenderer;
     private Color originalColor;
     private bool isHighlighted = false;
@@ -120,9 +125,37 @@ public class InteractableObject : MonoBehaviour, IInteractable
         // - Trigger an event
         // - Open a door
         // - Collect an item
-        
-        // For demonstration, let's just disable the object
-        gameObject.SetActive(false);
+
+        // Check if this is a cheese object
+        if (gameObject.tag == "Cheese" || gameObject.name.ToLower().Contains("cheese"))
+        {
+            // Update cheese count using GameUI singleton
+            if (GameUI.Instance != null)
+            {
+                GameUI.Instance.AddCheese(cheeseValue);
+                Debug.Log($"Collected {cheeseValue} cheese! UI updated.");
+            }
+            else
+            {
+                Debug.LogWarning("GameUI Instance not found! Cannot update cheese count.");
+            }
+            
+            // Disable the cheese object
+            gameObject.SetActive(false);
+        }
+        else if (gameObject.tag == "Button")
+        {
+            // Handle button interaction (door opening)
+            if (doorObject != null)
+            {
+                doorObject.SetActive(false);
+            }
+        }
+        else
+        {
+            // Default behavior - disable the object
+            gameObject.SetActive(false);
+        }
     }
     
     // Optional: Make the object interactable/non-interactable from other scripts

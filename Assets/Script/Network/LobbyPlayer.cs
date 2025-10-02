@@ -18,6 +18,9 @@ public class LobbyPlayer : NetworkBehaviour
 
     [Header("UI References (Optional)")]
     public TextMeshProUGUI playerNameText;
+    
+    // Track registration state to prevent issues
+    private bool isRegistered = false;
 
     public string PlayerName => lobbyPlayerName.Value.ToString();
 
@@ -46,10 +49,19 @@ public class LobbyPlayer : NetworkBehaviour
 
 
         // Register with PlayerManager if it exists
-        if (PlayerManager.Instance != null)
+        if (PlayerManager.Instance != null && !isRegistered)
         {
             PlayerManager.Instance.RegisterLobbyPlayer(OwnerClientId, this);
-            print("LobbyPlayer spawned with name: " + PlayerName);
+            isRegistered = true;
+            print($"LobbyPlayer spawned and registered: {PlayerName} (Client {OwnerClientId})");
+        }
+        else if (isRegistered)
+        {
+            print($"LobbyPlayer {PlayerName} (Client {OwnerClientId}) already registered, skipping");
+        }
+        else
+        {
+            print($"LobbyPlayer spawned but PlayerManager.Instance is null: {PlayerName} (Client {OwnerClientId})");
         }
         
         // Update UI
@@ -58,10 +70,16 @@ public class LobbyPlayer : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
-        // Unregister from PlayerManager
-        if (PlayerManager.Instance != null)
+        // Only unregister if we're actually registered and this isn't due to scene cleanup
+        if (PlayerManager.Instance != null && isRegistered)
         {
+            print($"LobbyPlayer {PlayerName} (Client {OwnerClientId}) is despawning - unregistering from PlayerManager");
             PlayerManager.Instance.UnregisterLobbyPlayer(OwnerClientId);
+            isRegistered = false;
+        }
+        else if (!isRegistered)
+        {
+            print($"LobbyPlayer {PlayerName} (Client {OwnerClientId}) is despawning but was never registered");
         }
         
         lobbyPlayerName.OnValueChanged -= OnNameChanged;

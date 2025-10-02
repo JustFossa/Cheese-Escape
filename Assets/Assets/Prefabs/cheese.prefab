@@ -11,52 +11,52 @@ PrefabInstance:
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalScale.x
-      value: 15
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalScale.y
-      value: 15
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalScale.z
-      value: 15
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.53
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.63
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalPosition.z
-      value: 3.47
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.68909603
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalRotation.x
-      value: -0.68909603
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0.15857719
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0.15857717
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
@@ -88,6 +88,11 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 6
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: bdde987078c781e49bfa134c929d2a91,
+        type: 3}
+      propertyPath: m_TagString
+      value: Cheese
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -95,11 +100,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: 6193649155712320966}
+      addedObject: {fileID: 6054920644081892375}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: bdde987078c781e49bfa134c929d2a91,
         type: 3}
       insertIndex: -1
-      addedObject: {fileID: 6054920644081892375}
+      addedObject: {fileID: -6427409715621324957}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: bdde987078c781e49bfa134c929d2a91,
+        type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7698245789662045949}
   m_SourcePrefab: {fileID: 100100000, guid: bdde987078c781e49bfa134c929d2a91, type: 3}
 --- !u!1 &611767871526137430 stripped
 GameObject:
@@ -107,27 +116,6 @@ GameObject:
     type: 3}
   m_PrefabInstance: {fileID: 341154761409745671}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &6193649155712320966
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 611767871526137430}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6761b7d7a8f0b8d44bdc16efa1928c0e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  interactionDuration: 10
-  interactionPrompt: Hold E to interact
-  canInteract: 1
-  highlightEffect: {fileID: 0}
-  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  audioSource: {fileID: 0}
-  interactionStartSound: {fileID: 0}
-  interactionCompleteSound: {fileID: 0}
-  interactionCancelSound: {fileID: 0}
 --- !u!65 &6054920644081892375
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -149,3 +137,54 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.02594194, y: 0.04592731, z: 0.020000007}
   m_Center: {x: 0.00005516357, y: -0.006653303, z: 1.2032216e-10}
+--- !u!114 &-6427409715621324957
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 611767871526137430}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 2193768143
+  InScenePlacedSourceGlobalObjectIdHash: 4005404923
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+--- !u!114 &7698245789662045949
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 611767871526137430}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 241780ec1ab418d4bbd81fd69e969f1d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  interactionDuration: 6
+  interactionPrompt: Hold E to collect cheese
+  canInteract: 1
+  cheeseValue: 1
+  cheeseName: Cheese Piece
+  allowHunterToCollect: 0
+  highlightEffect: {fileID: 0}
+  highlightColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  originalColor: {r: 1, g: 1, b: 1, a: 1}
+  rotateWhenIdle: 1
+  rotationSpeed: 90
+  bobUpAndDown: 1
+  bobSpeed: 2
+  bobHeight: 0.2
+  audioSource: {fileID: 0}
+  interactionStartSound: {fileID: 0}
+  interactionCompleteSound: {fileID: 0}
+  interactionCancelSound: {fileID: 0}
