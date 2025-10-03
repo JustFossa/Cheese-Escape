@@ -28,6 +28,8 @@ public class GameUI : MonoBehaviour
     private PlayerData localPlayerData;
     private int cheeseCount = 0; // Placeholder for cheese system
     private float lastUpdateTime = 0f;
+
+    public GameObject cheeseDoor;
     
     // Static instance for easy access from other scripts
     public static GameUI Instance { get; private set; }
@@ -199,6 +201,12 @@ public class GameUI : MonoBehaviour
     public void AddCheese(int amount = 1)
     {
         cheeseCount += amount;
+
+        if (cheeseCount == 9)
+        {
+            Destroy(cheeseDoor);
+        }
+
         UpdateCheeseDisplay();
         Debug.Log($"Cheese collected! Total: {cheeseCount}");
     }

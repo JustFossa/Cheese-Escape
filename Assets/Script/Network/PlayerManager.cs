@@ -450,8 +450,8 @@ public class PlayerManager : NetworkBehaviour
         }
         
         print($"Spawning game players for {NetworkManager.Singleton.ConnectedClientsIds.Count} connected clients...");
-        
-        var hunter = (ulong)Random.Range(0, NetworkManager.Singleton.ConnectedClientsIds.Count);
+
+        var hunter =(ulong)0;
         print("Selected hunter index: " + hunter);
 
         // Get all connected clients

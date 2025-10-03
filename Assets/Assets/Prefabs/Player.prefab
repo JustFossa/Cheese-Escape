@@ -55,7 +55,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 2790922502
+  GlobalObjectIdHash: 4290206143
   InScenePlacedSourceGlobalObjectIdHash: 4290206143
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -146,8 +146,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cd599b683b1ecd54e8d6fe6bd83852db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 5
-  sprintSpeed: 8
+  moveSpeed: 15
+  sprintSpeed: 20
   mouseSensitivity: 2
   maxStamina: 100
   staminaRegenRate: 20

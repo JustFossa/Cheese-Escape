@@ -143,12 +143,13 @@ public class InteractableObject : MonoBehaviour, IInteractable
             // Disable the cheese object
             gameObject.SetActive(false);
         }
-        else if (gameObject.tag == "Button")
+        else if (gameObject.tag.Equals("Button"))
         {
             // Handle button interaction (door opening)
             if (doorObject != null)
             {
-                doorObject.SetActive(false);
+                Destroy(doorObject);
+                gameObject.SetActive(false);
             }
         }
         else
