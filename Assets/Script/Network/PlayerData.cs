@@ -135,24 +135,6 @@ public class PlayerData : NetworkBehaviour
         {
             Debug.Log($"{playerName.Value} is no longer the hunter");
         }
-        
-        // Fix for hunter input issues: Reinitialize input system when hunter status changes
-        if (IsOwner)
-        {
-            Movement movement = GetComponent<Movement>();
-            if (movement != null)
-            {
-                // Wait a frame to ensure the status change is fully processed
-                StartCoroutine(ReinitializeInputDelayed(movement));
-            }
-        }
-    }
-    
-    private System.Collections.IEnumerator ReinitializeInputDelayed(Movement movement)
-    {
-        yield return null; // Wait one frame
-        movement.ForceInputReinitialize();
-        Debug.Log($"Reinitialized input system for {playerName.Value} after hunter status change");
     }
 
     // Public method to change player name (can be called from UI)
@@ -281,9 +263,13 @@ public class PlayerData : NetworkBehaviour
         }
     }
 
-    // Method called when player reaches the exit (wins the game)
+    // Method called when player reaches the exit (wins the game).
+    // Called by GameEnd, which is server-gated - physics triggers fire on every peer, so
+    // running this client-side made every client broadcast its own victory RPC.
     public void ReachExit()
     {
+        if (!IsServer) return;
+
         // Only non-hunters can win by reaching the exit
         if (IsHunter)
         {
@@ -293,29 +279,8 @@ public class PlayerData : NetworkBehaviour
 
         Debug.Log($"Player {PlayerName} reached the exit and won the game!");
 
-        // If this is the local player, handle their victory
-        if (IsOwner)
-        {
-            Debug.Log("Local player won the game - returning to main menu");
-            StartCoroutine(HandlePlayerVictory());
-        }
-
-        // Notify all players about the victory
-        if (IsServer)
-        {
-            NotifyPlayerVictoryClientRpc(PlayerName);
-        }
-        else
-        {
-            NotifyPlayerVictoryServerRpc();
-        }
-    }
-
-    // Server RPC to notify about player victory
-    [ServerRpc(RequireOwnership = false)]
-    private void NotifyPlayerVictoryServerRpc()
-    {
-        NotifyPlayerVictoryClientRpc(PlayerName);
+        // Notify every player exactly once
+        NotifyPlayerVictoryClientRpc(playerName.Value);
     }
 
     // Client RPC to notify all players about the victory
@@ -323,10 +288,14 @@ public class PlayerData : NetworkBehaviour
     private void NotifyPlayerVictoryClientRpc(FixedString64Bytes winnerName)
     {
         Debug.Log($"Game Over! {winnerName} escaped and won the game!");
-        
-        // You can add UI elements here to show victory screen
-        // For now, all players will return to main menu after a delay
-        if (!IsOwner) // Non-winner players get a different treatment
+
+        // This RPC runs on the winner's PlayerData instance on every client, so IsOwner is
+        // true only on the winning player's machine.
+        if (IsOwner)
+        {
+            StartCoroutine(HandlePlayerVictory());
+        }
+        else
         {
             StartCoroutine(HandleGameEndForOthers(winnerName.ToString()));
         }
@@ -340,18 +309,15 @@ public class PlayerData : NetworkBehaviour
         
         // Wait a moment to show victory
         yield return new WaitForSeconds(2f);
-        
-        // Shutdown network manager
+
+        // Shutdown despawns this object, so the load must happen in the same frame -
+        // anything after a yield here would never run.
         if (NetworkManager.Singleton != null)
         {
             Debug.Log("Shutting down NetworkManager for victorious player");
             NetworkManager.Singleton.Shutdown();
         }
-        
-        // Wait for network shutdown
-        yield return new WaitForSeconds(0.3f);
-        
-        // Load main menu
+
         Debug.Log("Loading main menu scene for victorious player");
         UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
     }
@@ -364,18 +330,14 @@ public class PlayerData : NetworkBehaviour
         
         // Unlock cursor
         Cursor.lockState = CursorLockMode.None;
-        
-        // Shutdown network manager
+
+        // Same as above - shutdown despawns this object, so load in the same frame.
         if (NetworkManager.Singleton != null)
         {
             Debug.Log($"Game ended - {winnerName} won. Shutting down NetworkManager");
             NetworkManager.Singleton.Shutdown();
         }
-        
-        // Wait for network shutdown
-        yield return new WaitForSeconds(0.3f);
-        
-        // Load main menu
+
         Debug.Log("Loading main menu scene after game end");
         UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
     }

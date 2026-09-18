@@ -152,7 +152,7 @@ MonoBehaviour:
   maxStamina: 100
   staminaRegenRate: 20
   sprintStaminaDrain: 25
-  minStaminaToSprint: 10
+  minStaminaToSprint: 45
   groundCheck: {fileID: 2667406381107114740}
   groundCheckDistance: 0.4
   groundLayerMask:

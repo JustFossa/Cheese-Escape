@@ -115,21 +115,20 @@ public class LobbyManager : NetworkBehaviour
 
     private void OnGameStartedNetworkChanged(bool oldValue, bool newValue)
     {
+        // Deliberately does NOT load the scene. NGO raises OnValueChanged synchronously on the
+        // writer, so loading here fired before lobby cleanup and player spawning had run.
+        // StartGameTransition loads the scene at the correct point instead.
         OnGameStateChanged?.Invoke(newValue);
-        
-        if (newValue)
-        {
-            // Game has started, load the game scene
-            LoadGameScene();
-        }
     }
 
     // Public method for host to start the game
     [ServerRpc(RequireOwnership = false)]
     public void StartGameServerRpc(ServerRpcParams rpcParams = default)
     {
-        // Only allow the host (server) to start the game
-        if (rpcParams.Receive.SenderClientId != NetworkManager.Singleton.LocalClientId && !NetworkManager.Singleton.IsServer)
+        // Only allow the host to start the game. The previous check compared against
+        // LocalClientId and short-circuited on IsServer, which is always true inside a
+        // ServerRpc body - so any client could start the game.
+        if (rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
         {
             return;
         }
@@ -199,21 +198,17 @@ public class LobbyManager : NetworkBehaviour
     // Public properties to access network variables
     public int ConnectedPlayersCount => connectedPlayersCount.Value;
     public bool IsGameStarted => isGameStarted.Value;
-    new public bool IsHost => NetworkManager.Singleton.IsServer;
+    new public bool IsHost => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
     public bool CanStartGame => IsHost && ConnectedPlayersCount >= 1 && !IsGameStarted;
 
     // Method to leave the lobby (return to main menu)
     public void LeaveLobby()
     {
-        if (NetworkManager.Singleton.IsHost)
+        if (NetworkManager.Singleton != null)
         {
             NetworkManager.Singleton.Shutdown();
         }
-        else
-        {
-            NetworkManager.Singleton.Shutdown();
-        }
-        
+
         // Return to main menu
         SceneManager.LoadScene("MainMenuScene");
     }

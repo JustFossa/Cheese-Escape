@@ -29,7 +29,12 @@ public class GameUI : MonoBehaviour
     private int cheeseCount = 0; // Placeholder for cheese system
     private float lastUpdateTime = 0f;
 
+    [Header("Cheese Door")]
     public GameObject cheeseDoor;
+    // ponytail: 6 of the 9 cheese in GameScene - leaves route choice and slack for
+    // cheese the hunter camps. Raise only if the scene gains more cheese.
+    [SerializeField] private int cheeseNeededForDoor = 6;
+    private bool cheeseDoorOpened = false;
     
     // Static instance for easy access from other scripts
     public static GameUI Instance { get; private set; }
@@ -202,9 +207,15 @@ public class GameUI : MonoBehaviour
     {
         cheeseCount += amount;
 
-        if (cheeseCount == 9)
+        // >= not ==: a pickup worth more than 1 used to step straight past the threshold
+        // and the door would never open.
+        if (!cheeseDoorOpened && cheeseCount >= cheeseNeededForDoor)
         {
-            Destroy(cheeseDoor);
+            cheeseDoorOpened = true;
+            if (cheeseDoor != null)
+            {
+                Destroy(cheeseDoor);
+            }
         }
 
         UpdateCheeseDisplay();

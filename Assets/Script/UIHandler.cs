@@ -20,10 +20,11 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
     
     private bool isConnecting = false;
     private PlayerData localPlayerData;
-    private int cheeseCount = 0; // Placeholder for cheese system
 
     public void OnPointerClick(PointerEventData eventData)
     {
+        if (eventData == null || eventData.pointerPress == null) return;
+
         Button btn = eventData.pointerPress.GetComponent<Button>();
 
         if (btn != null)
@@ -109,8 +110,10 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
     
     private bool IsInGameScene()
     {
+        // Contains("Game") also matched HostGameScene and JoinGameScene, so the in-game HUD
+        // rendered over the connection menus.
         string currentScene = SceneManager.GetActiveScene().name;
-        return currentScene == "GameScene" || currentScene == "Game" || currentScene.Contains("Game");
+        return currentScene == "GameScene" || currentScene == "Game";
     }
     
     private void InitializeGameUI()
@@ -194,38 +197,30 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
     {
         if (cheeseCountText == null) return;
         
-        // For now, display placeholder cheese count
-        // This can be expanded when a cheese collection system is implemented
+        // GameUI owns the cheese count. This used to keep its own counter AND forward to
+        // GameUI, so anything routed through here counted twice.
+        int cheeseCount = GameUI.Instance != null ? GameUI.Instance.GetCheeseCount() : 0;
         cheeseCountText.text = $"Cheese: {cheeseCount}";
-        
-        // TODO: Replace with actual cheese collection system
-        // Example: cheeseCount = localPlayerData.GetCheeseCount();
     }
-    
+
     // Public method to update cheese count (to be called by cheese collection system)
     public void AddCheese(int amount = 1)
     {
-        cheeseCount += amount;
-        UpdateCheeseDisplay();
-        
-        // Also update GameUI if it exists for compatibility
         if (GameUI.Instance != null)
         {
             GameUI.Instance.AddCheese(amount);
         }
+        UpdateCheeseDisplay();
     }
-    
+
     // Public method to reset cheese count
     public void ResetCheese()
     {
-        cheeseCount = 0;
-        UpdateCheeseDisplay();
-        
-        // Also reset GameUI if it exists for compatibility
         if (GameUI.Instance != null)
         {
             GameUI.Instance.ResetCheese();
         }
+        UpdateCheeseDisplay();
     }
     
     private void OnClientDisconnected(ulong clientId)
@@ -370,6 +365,7 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
             {
                 Debug.LogError("Client connection failed or was rejected");
                 ShowConnectionError("Connection failed or was rejected by server");
+                isConnecting = false; // otherwise every later JoinGame() bails at the guard
                 yield break;
             }
             

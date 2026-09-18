@@ -25,6 +25,7 @@ public class CheeseCollectible : MonoBehaviour, IInteractable
     private Color originalColor;
     private bool isHighlighted = false;
     private Vector3 originalPosition;
+    private Vector3 originalScale;
     private UIHandler uiHandler;
     
     // Interface properties
@@ -34,8 +35,9 @@ public class CheeseCollectible : MonoBehaviour, IInteractable
     
     void Start()
     {
-        // Store original position for bobbing animation
+        // Store original transform for the bobbing / progress animations
         originalPosition = transform.position;
+        originalScale = transform.localScale;
         
         // Get renderer for visual feedback
         objectRenderer = GetComponent<Renderer>();
@@ -91,9 +93,8 @@ public class CheeseCollectible : MonoBehaviour, IInteractable
             objectRenderer.material.color = lerpedColor;
         }
         
-        // Optional: Scale the object slightly based on progress
-        float scale = 1f + (progress * 0.1f); // Slight scale increase
-        transform.localScale = Vector3.one * scale;
+        // Slight scale increase as the hold progresses
+        transform.localScale = originalScale * (1f + progress * 0.1f);
     }
     
     public void OnInteractionComplete()
@@ -129,8 +130,9 @@ public class CheeseCollectible : MonoBehaviour, IInteractable
         {
             audioSource.PlayOneShot(interactionCancelSound);
         }
-        
-        // Reset visual state
+
+        // Reset visual state - OnInteractionProgress leaves the object scaled up
+        transform.localScale = originalScale;
         SetHighlight(false);
     }
     

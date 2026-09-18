@@ -47,25 +47,14 @@ public class StaminaUI : MonoBehaviour
         // Find all Movement components in the scene
         Movement[] allMovements = FindObjectsOfType<Movement>();
         
+        // Only bind to the owning player. The old tag fallback could latch onto a remote
+        // player's Movement; Update already retries every frame until the owner exists.
         foreach (Movement movement in allMovements)
         {
-            // Check if this is the local player
-            NetworkBehaviour networkBehaviour = movement.GetComponent<NetworkBehaviour>();
-            if (networkBehaviour != null && networkBehaviour.IsOwner)
+            if (movement.IsOwner)
             {
                 playerMovement = movement;
-                break;
-            }
-        }
-        
-        // If we couldn't find by NetworkBehaviour, try another approach
-        if (playerMovement == null)
-        {
-            // Look for a movement component on a GameObject with a specific tag or name
-            GameObject localPlayer = GameObject.FindWithTag("Player");
-            if (localPlayer != null)
-            {
-                playerMovement = localPlayer.GetComponent<Movement>();
+                return;
             }
         }
     }

@@ -1,6 +1,4 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -8,40 +6,51 @@ using UnityEngine;
 public class Key : NetworkBehaviour
 {
     [Header("Key Settings")]
-    public int keyId = 0; // Unique identifier for this key
+    public int keyId = 0; // Unique identifier for this key - must match a Door's requiredKeyId
     public string keyName = "Key"; // Display name for this key
     public Color keyColor = Color.yellow; // Visual color for the key
-    
+
     private NetworkVariable<bool> isCollected = new NetworkVariable<bool>(
-        false, 
-        NetworkVariableReadPermission.Everyone, 
+        false,
+        NetworkVariableReadPermission.Everyone,
         NetworkVariableWritePermission.Server
     );
-    
+
+    private Renderer objectRenderer;
+
     public bool IsCollected => isCollected.Value;
 
     private void Start()
     {
-        // Ensure this key has a unique ID if not set
-        if (keyId == 0)
-        {
-            keyId = GetInstanceID(); // Use instance ID as fallback
-        }
-        
-        // Subscribe to collection status changes
-        isCollected.OnValueChanged += OnCollectionStatusChanged;
-        
         // Setup visual appearance
         SetupVisualAppearance();
+    }
+
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+        isCollected.OnValueChanged += OnCollectionStatusChanged;
+
+        // Already collected before we joined - apply the hidden state immediately
+        if (isCollected.Value)
+        {
+            OnCollectionStatusChanged(false, true);
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        isCollected.OnValueChanged -= OnCollectionStatusChanged;
+        base.OnNetworkDespawn();
     }
 
     private void SetupVisualAppearance()
     {
         // Apply key color to renderer if available
-        Renderer renderer = GetComponent<Renderer>();
-        if (renderer != null)
+        objectRenderer = GetComponent<Renderer>();
+        if (objectRenderer != null)
         {
-            renderer.material.color = keyColor;
+            objectRenderer.material.color = keyColor;
         }
     }
 
@@ -49,7 +58,7 @@ public class Key : NetworkBehaviour
     {
         // Only process on server and if not already collected
         if (!IsServer || isCollected.Value) return;
-        
+
         // Check if it's a regular player (not hunter)
         PlayerData playerData = other.GetComponent<PlayerData>();
         if (playerData != null && !playerData.IsHunter)
@@ -65,26 +74,27 @@ public class Key : NetworkBehaviour
     private void CollectKey(PlayerData player)
     {
         if (!IsServer) return;
-        
-        // Mark as collected
-        isCollected.Value = true;
-         // Despawn the key object for everyone
-        StartCoroutine(DespawnAfterDelay(0.1f));
+
         // Add to player's inventory
         player.AddKeyToInventoryServerRpc(keyId, new FixedString64Bytes(keyName));
-        
+
         // Notify all clients
         NotifyKeyCollectedClientRpc(player.OwnerClientId, keyName);
-        
+
         Debug.Log($"Key '{keyName}' collected by {player.PlayerName}");
-        
-       
+
+        // Start the despawn BEFORE flipping the flag. OnValueChanged fires synchronously on the
+        // server, and the old code deactivated the GameObject there - which made StartCoroutine
+        // throw and left the key spawned forever.
+        StartCoroutine(DespawnAfterDelay(0.1f));
+
+        isCollected.Value = true;
     }
-    
+
     private IEnumerator DespawnAfterDelay(float delay)
     {
         yield return new WaitForSeconds(delay);
-        
+
         if (NetworkObject != null && NetworkObject.IsSpawned)
         {
             NetworkObject.Despawn();
@@ -98,33 +108,36 @@ public class Key : NetworkBehaviour
         if (NetworkManager.Singleton.LocalClientId == collectorClientId)
         {
             Debug.Log($"You collected the {keyName}!");
-            // Here you could trigger UI updates, sound effects, etc.
+            return;
         }
-        else
+
+        foreach (var player in FindObjectsOfType<PlayerData>())
         {
-            PlayerData collector = null;
-            foreach (var player in FindObjectsOfType<PlayerData>())
+            if (player.OwnerClientId == collectorClientId)
             {
-                if (player.OwnerClientId == collectorClientId)
-                {
-                    collector = player;
-                    break;
-                }
-            }
-            
-            if (collector != null)
-            {
-                Debug.Log($"{collector.PlayerName} collected the {keyName}!");
+                Debug.Log($"{player.PlayerName} collected the {keyName}!");
+                break;
             }
         }
     }
 
     private void OnCollectionStatusChanged(bool oldValue, bool newValue)
     {
-        if (newValue)
+        if (!newValue) return;
+
+        // OnNetworkSpawn can run before Start, so resolve the renderer lazily.
+        if (objectRenderer == null) objectRenderer = GetComponent<Renderer>();
+
+        // Hide visually without deactivating the GameObject, so coroutines keep running.
+        if (objectRenderer != null)
         {
-            // Key was collected, hide it visually
-            gameObject.SetActive(false);
+            objectRenderer.enabled = false;
+        }
+
+        Collider col = GetComponent<Collider>();
+        if (col != null)
+        {
+            col.enabled = false;
         }
     }
 
@@ -135,14 +148,5 @@ public class Key : NetworkBehaviour
             keyId = this.keyId,
             keyName = new FixedString64Bytes(this.keyName)
         };
-    }
-
-    public override void OnDestroy()
-    {
-        if (isCollected != null)
-        {
-            isCollected.OnValueChanged -= OnCollectionStatusChanged;
-        }
-        base.OnDestroy();
     }
 }

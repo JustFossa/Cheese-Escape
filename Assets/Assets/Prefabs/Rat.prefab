@@ -48,6 +48,7 @@ GameObject:
   - component: {fileID: 1820285336849125167}
   - component: {fileID: 8237981947980798363}
   - component: {fileID: -2410814812531749070}
+  - component: {fileID: 4811962037450918233}
   m_Layer: 0
   m_Name: Rat
   m_TagString: Untagged
@@ -130,7 +131,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 1984415733917919614}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e96cb6065543e43c4a752faaa1468eb1, type: 3}
+  m_Script: {fileID: 11500000, guid: ed481456b26f6a44dac452b6f945f495, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   UseUnreliableDeltas: 0
@@ -199,12 +200,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cd599b683b1ecd54e8d6fe6bd83852db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 5
-  sprintSpeed: 8
+  moveSpeed: 16
+  sprintSpeed: 18
   mouseSensitivity: 2
   maxStamina: 100
-  staminaRegenRate: 20
-  sprintStaminaDrain: 25
+  staminaRegenRate: 25
+  sprintStaminaDrain: 20
   minStaminaToSprint: 10
   groundCheck: {fileID: 7261402434171089576}
   groundCheckDistance: 0.4
@@ -682,3 +683,15 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+--- !u!114 &4811962037450918233
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1984415733917919614}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 51da84598f176c9499f33f8a3a0ff006, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

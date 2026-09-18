@@ -29,14 +29,31 @@ public class Door : NetworkBehaviour
     
     public bool IsOpen => isOpen.Value;
 
-    private void Start()
+    private void Awake()
     {
-        // Store original position and rotation
+        // Captured in Awake: OnNetworkSpawn can run before Start for in-scene NetworkObjects,
+        // and the animation coroutine needs these to already be valid.
         closedPosition = transform.localPosition;
         closedRotation = transform.localEulerAngles;
-        
-        // Subscribe to door state changes
+    }
+
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
         isOpen.OnValueChanged += OnDoorStateChanged;
+
+        // Door was already opened before we joined - snap to the open state
+        if (isOpen.Value)
+        {
+            transform.localPosition = openPosition;
+            transform.localEulerAngles = openRotation;
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        isOpen.OnValueChanged -= OnDoorStateChanged;
+        base.OnNetworkDespawn();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -201,10 +218,7 @@ public class Door : NetworkBehaviour
     [ServerRpc(RequireOwnership = false)]
     public void CloseDoorServerRpc()
     {
-        if (IsServer)
-        {
-            isOpen.Value = false;
-        }
+        isOpen.Value = false;
     }
 
     // Public method to check if a specific player can open this door
@@ -222,30 +236,12 @@ public class Door : NetworkBehaviour
         }
     }
 
-    public override void OnDestroy()
-    {
-        if (isOpen != null)
-        {
-            isOpen.OnValueChanged -= OnDoorStateChanged;
-        }
-        base.OnDestroy();
-    }
-
     // Visual debugging
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.blue;
         Gizmos.DrawWireCube(transform.position, Vector3.one);
-        
-        if (Application.isPlaying && isOpen.Value)
-        {
-            Gizmos.color = Color.green;
-        }
-        else
-        {
-            Gizmos.color = Color.red;
-        }
-        
+
         Vector3 doorCenter = transform.position + transform.TransformDirection(openPosition) * 0.5f;
         Gizmos.DrawWireSphere(doorCenter, 0.5f);
     }

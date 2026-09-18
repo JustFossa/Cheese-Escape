@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -44,6 +43,8 @@ public class Movement : NetworkBehaviour
     public LayerMask interactableLayerMask = -1; // All layers by default
     public KeyCode interactKey = KeyCode.E;
 
+    [Header("Catch Settings")]
+    public float catchAngle = 45f; // Hunter must be facing the victim within this cone
 
     private Rigidbody rb;
     private bool isGrounded;
@@ -60,7 +61,6 @@ public class Movement : NetworkBehaviour
     private Vector2 moveInput;
     private Vector2 lookInput;
     private bool isSprintPressed;
-    private bool isInteractPressed;
 
     // Stamina variables
     private float currentStamina;
@@ -75,6 +75,7 @@ public class Movement : NetworkBehaviour
 
     // View bobbing variables
     private Vector3 cameraOriginalPosition;
+    private bool cameraOriginCaptured = false;
     private float bobTimer = 0f;
     private bool isMoving = false;
 
@@ -89,7 +90,6 @@ public class Movement : NetworkBehaviour
 
         // Setup camera and input after network spawn
         SetupPlayerComponents();
-
     }
 
     // Start is called before the first frame update
@@ -132,7 +132,6 @@ public class Movement : NetworkBehaviour
             playerModel.SetActive(false);
         }
 
-
         // If network isn't spawned yet, setup components anyway
         if (!IsSpawned)
         {
@@ -149,12 +148,8 @@ public class Movement : NetworkBehaviour
             playerInput = GetComponent<PlayerInput>();
             if (playerInput != null)
             {
-                // Force enable and reinitialize the input system
-                playerInput.enabled = false; // Disable first
-                playerInput.enabled = true;  // Then re-enable to force refresh
-
-                // Wait a frame and setup actions to ensure proper initialization
-                StartCoroutine(SetupInputActionsDelayed());
+                playerInput.enabled = true;
+                StartCoroutine(SetupInputActions());
             }
             else
             {
@@ -174,19 +169,22 @@ public class Movement : NetworkBehaviour
                 if (playerCamera != null)
                 {
                     playerCamera.enabled = true;
-                    print($"Enabled camera for local player {OwnerClientId}");
 
                     // Also enable AudioListener if present
                     AudioListener audioListener = cameraTransform.GetComponent<AudioListener>();
                     if (audioListener != null)
                     {
                         audioListener.enabled = true;
-                        print($"Enabled audio listener for local player {OwnerClientId}");
                     }
                 }
 
-                // Store the original camera position for view bobbing
-                cameraOriginalPosition = cameraTransform.localPosition;
+                // Capture the rest position for view bobbing exactly once. Re-capturing on a
+                // later setup pass would read a mid-bob position and drift the camera.
+                if (!cameraOriginCaptured)
+                {
+                    cameraOriginalPosition = cameraTransform.localPosition;
+                    cameraOriginCaptured = true;
+                }
             }
         }
         else
@@ -198,103 +196,52 @@ public class Movement : NetworkBehaviour
                 if (playerCamera != null)
                 {
                     playerCamera.enabled = false;
-                    print($"Disabled camera for remote player {OwnerClientId}");
                 }
 
                 AudioListener audioListener = cameraTransform.GetComponent<AudioListener>();
                 if (audioListener != null)
                 {
                     audioListener.enabled = false;
-                    print($"Disabled audio listener for remote player {OwnerClientId}");
                 }
             }
-
-
         }
     }
 
-    private IEnumerator SetupInputActionsDelayed()
+    private IEnumerator SetupInputActions()
     {
-        // Wait a frame to ensure PlayerInput is fully initialized
-        yield return null;
-
-        if (playerInput != null && playerInput.actions != null)
+        // PlayerInput needs a frame to build its action asset instance.
+        float timeout = 5f;
+        while (playerInput != null && playerInput.actions == null && timeout > 0f)
         {
-            // Setup input actions with error handling
-            try
-            {
-                moveAction = playerInput.actions["Move"];
-                lookAction = playerInput.actions["Look"];
-                sprintAction = playerInput.actions["Sprint"];
-
-                // Try to get interaction action if it exists
-                try
-                {
-                    interactAction = playerInput.actions["Interact"];
-                }
-                catch
-                {
-                    interactAction = null;
-                    Debug.Log("Interact action not found in Input Actions, using manual key detection");
-                }
-
-                // Enable all actions
-                if (moveAction != null) moveAction.Enable();
-                if (lookAction != null) lookAction.Enable();
-                if (sprintAction != null) sprintAction.Enable();
-                if (interactAction != null) interactAction.Enable();
-
-                Debug.Log($"Input actions successfully initialized for player {OwnerClientId}");
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"Failed to setup input actions: {e.Message}", this);
-
-                // Fallback: try to reinitialize PlayerInput component after a longer delay
-                StartCoroutine(RetryInputSetupDelayed());
-            }
-        }
-        else
-        {
-            Debug.LogWarning("PlayerInput or actions are null, retrying input setup...");
-            yield return new WaitForSeconds(0.5f);
-            RetryInputSetup();
-        }
-    }
-
-    private IEnumerator RetryInputSetupDelayed()
-    {
-        yield return new WaitForSeconds(0.5f);
-        RetryInputSetup();
-    }
-
-    private void RetryInputSetup()
-    {
-        if (playerInput == null)
-        {
-            playerInput = GetComponent<PlayerInput>();
+            timeout -= Time.deltaTime;
+            yield return null;
         }
 
-        if (playerInput != null)
+        if (playerInput == null || playerInput.actions == null)
         {
-            playerInput.enabled = false;
-            playerInput.enabled = true;
-            StartCoroutine(SetupInputActionsDelayed());
+            Debug.LogError("PlayerInput actions never became available - input will not work.", this);
+            yield break;
         }
-        else
-        {
-            Debug.LogError("PlayerInput component is missing! Player input will not work.");
-        }
-    }
 
-    // Public method to force input system reinitialization (can be called when hunter status changes)
-    public void ForceInputReinitialize()
-    {
-        if (IsOwner)
+        moveAction = playerInput.actions.FindAction("Move");
+        lookAction = playerInput.actions.FindAction("Look");
+        sprintAction = playerInput.actions.FindAction("Sprint");
+        // Optional - PlayerInputActions currently defines no Interact action, so interaction
+        // falls back to interactKey below.
+        interactAction = playerInput.actions.FindAction("Interact");
+
+        if (moveAction == null || lookAction == null || sprintAction == null)
         {
-            Debug.Log($"Force reinitializing input for player {OwnerClientId}");
-            SetupPlayerComponents();
+            Debug.LogError("Move/Look/Sprint actions missing from the Input Actions asset.", this);
+            yield break;
         }
+
+        moveAction.Enable();
+        lookAction.Enable();
+        sprintAction.Enable();
+        if (interactAction != null) interactAction.Enable();
+
+        Debug.Log($"Input actions initialized for player {OwnerClientId}");
     }
 
     public override void OnNetworkDespawn()
@@ -326,39 +273,34 @@ public class Movement : NetworkBehaviour
         if (mainCamera != null && mainCamera.transform != cameraTransform)
         {
             mainCamera.enabled = false;
-            print("Disabled scene main camera to prevent conflicts");
 
             // Also disable its AudioListener if present
             AudioListener sceneAudioListener = mainCamera.GetComponent<AudioListener>();
             if (sceneAudioListener != null)
             {
                 sceneAudioListener.enabled = false;
-                print("Disabled scene audio listener");
             }
         }
     }
 
     private void SetupPhysicsMaterial()
     {
-        // Get all colliders on this GameObject and its children
-        Collider[] colliders = GetComponentsInChildren<Collider>();
+        // Resolve the material once, not once per collider.
+        PhysicMaterial playerPhysics = Resources.Load<PhysicMaterial>("PlayerPhysics");
 
-        foreach (Collider col in colliders)
+        // If we can't load it, create one with the right settings
+        if (playerPhysics == null)
         {
-            // Try to load the physics material we created
-            PhysicMaterial playerPhysics = Resources.Load<PhysicMaterial>("PlayerPhysics");
+            playerPhysics = new PhysicMaterial("PlayerPhysics");
+            playerPhysics.dynamicFriction = 0.3f;
+            playerPhysics.staticFriction = 0.3f;
+            playerPhysics.bounciness = 0f; // No bouncing
+            playerPhysics.frictionCombine = PhysicMaterialCombine.Average;
+            playerPhysics.bounceCombine = PhysicMaterialCombine.Minimum;
+        }
 
-            // If we can't load it, create one with the right settings
-            if (playerPhysics == null)
-            {
-                playerPhysics = new PhysicMaterial("PlayerPhysics");
-                playerPhysics.dynamicFriction = 0.3f;
-                playerPhysics.staticFriction = 0.3f;
-                playerPhysics.bounciness = 0f; // No bouncing
-                playerPhysics.frictionCombine = PhysicMaterialCombine.Average;
-                playerPhysics.bounceCombine = PhysicMaterialCombine.Minimum;
-            }
-
+        foreach (Collider col in GetComponentsInChildren<Collider>())
+        {
             col.material = playerPhysics;
         }
     }
@@ -369,13 +311,8 @@ public class Movement : NetworkBehaviour
         // Only process input if this is the local player
         if (!IsOwner || cameraTransform == null) return;
 
-        // Check if input actions are null and reinitialize if needed
-        if (moveAction == null || lookAction == null || sprintAction == null)
-        {
-            Debug.LogWarning($"Input actions are null for player {OwnerClientId}, attempting to reinitialize...");
-            ForceInputReinitialize();
-            return; // Skip this frame while reinitializing
-        }
+        // Input actions are bound asynchronously by SetupInputActions; skip until they exist.
+        if (moveAction == null || lookAction == null || sprintAction == null) return;
 
         // Handle stamina system
         HandleStamina();
@@ -393,7 +330,10 @@ public class Movement : NetworkBehaviour
         moveDirection = (forward * moveInput.y + right * moveInput.x).normalized;
 
         // Check if grounded using raycast
-        isGrounded = Physics.Raycast(groundCheck.position, Vector3.down, groundCheckDistance, groundLayerMask);
+        if (groundCheck != null)
+        {
+            isGrounded = Physics.Raycast(groundCheck.position, Vector3.down, groundCheckDistance, groundLayerMask);
+        }
 
         // Handle mouse look
         HandleMouseLook();
@@ -408,7 +348,7 @@ public class Movement : NetworkBehaviour
     void FixedUpdate()
     {
         // Only move if this is the local player
-        if (!IsOwner) return;
+        if (!IsOwner || rb == null) return;
 
         // Handle movement
         Move();
@@ -427,7 +367,6 @@ public class Movement : NetworkBehaviour
         // Apply force to reach target velocity, but don't exceed it
         if (velocityDifference.magnitude > 0.1f)
         {
-            // Use ForceMode.VelocityChange for immediate response, but scaled down for smoothness
             rb.AddForce(velocityDifference * 10f, ForceMode.Force);
         }
 
@@ -460,7 +399,7 @@ public class Movement : NetworkBehaviour
 
     void HandleViewBobbing()
     {
-        if (!enableViewBobbing || cameraTransform == null) return;
+        if (!enableViewBobbing || cameraTransform == null || !cameraOriginCaptured) return;
 
         // Check if the player is moving and grounded
         isMoving = moveInput.magnitude > 0.1f && isGrounded;
@@ -498,52 +437,44 @@ public class Movement : NetworkBehaviour
 
     void HandleStamina()
     {
-        // Store previous sprinting state for audio feedback
-        bool wasSprinting = isSprinting;
-
-        // Manual check for sprint input as backup (in case callback fails)
-        bool manualSprintCheck = false;
+        // Poll the Sprint action directly - this is the single source of truth. The old
+        // failsafe here hardcoded KeyCode.LeftShift and force-stopped sprinting every frame
+        // that key wasn't held, which broke any rebind or gamepad binding.
         if (sprintAction != null)
         {
-            manualSprintCheck = sprintAction.IsPressed();
-        }
-
-        // Use manual check if it differs from callback value
-        if (manualSprintCheck != isSprintPressed)
-        {
-
-            isSprintPressed = manualSprintCheck;
+            isSprintPressed = sprintAction.IsPressed();
         }
 
         // Check if player is trying to sprint
         bool wantsToSprint = isSprintPressed && moveInput.magnitude > 0.1f && isGrounded;
 
+        // minStaminaToSprint gates STARTING a sprint; once running you may spend down to
+        // zero. Re-checking it every frame made sprint stutter on and off at the threshold
+        // instead of giving a real burst, and left canSprint and the out-of-stamina branch
+        // below permanently dead.
+        bool staminaAllowsSprint = isSprinting
+            ? currentStamina > 0f
+            : currentStamina >= minStaminaToSprint;
 
         // Determine if we can/should sprint
-        if (wantsToSprint && currentStamina >= minStaminaToSprint && canSprint)
+        if (wantsToSprint && staminaAllowsSprint && canSprint)
         {
             // Start sprinting if not already sprinting
             if (!isSprinting)
             {
                 isSprinting = true;
-                Debug.Log("Started sprinting");
                 PlaySprintStartSound();
             }
 
-            // Only drain stamina if we're actually sprinting
-            if (isSprinting)
-            {
-                currentStamina -= sprintStaminaDrain * Time.deltaTime;
-                currentStamina = Mathf.Max(0f, currentStamina);
+            currentStamina -= sprintStaminaDrain * Time.deltaTime;
+            currentStamina = Mathf.Max(0f, currentStamina);
 
-                // If stamina runs out, stop sprinting and prevent immediate restart
-                if (currentStamina <= 0f)
-                {
-                    isSprinting = false;
-                    canSprint = false;
-                    Debug.Log("Stamina exhausted - stopped sprinting");
-                    PlayLowStaminaSound();
-                }
+            // If stamina runs out, stop sprinting and prevent immediate restart
+            if (currentStamina <= 0f)
+            {
+                isSprinting = false;
+                canSprint = false;
+                PlayLowStaminaSound();
             }
         }
         else
@@ -552,7 +483,6 @@ public class Movement : NetworkBehaviour
             if (isSprinting)
             {
                 isSprinting = false;
-                Debug.Log("Stopped sprinting - conditions not met");
                 PlaySprintStopSound();
             }
 
@@ -568,15 +498,6 @@ public class Movement : NetworkBehaviour
             {
                 canSprint = true;
             }
-        }
-
-        // Failsafe: Reset sprint state if Left Shift is not actually pressed
-        if (isSprinting && !UnityEngine.Input.GetKey(KeyCode.LeftShift))
-        {
-            Debug.Log("Failsafe: Force stopping sprint - Left Shift not detected");
-            isSprinting = false;
-            isSprintPressed = false;
-            PlaySprintStopSound();
         }
     }
 
@@ -604,20 +525,11 @@ public class Movement : NetworkBehaviour
         }
     }
 
-    // Input System callback for Move action
+    // Input System callback for Move action (PlayerInput is in Send Messages mode)
     public void OnMove(InputValue value)
     {
         if (!IsOwner) return;
-        Vector2 newMoveInput = value.Get<Vector2>();
-
-        // Debug logging for hunters to track input issues
-        PlayerData playerData = GetComponent<PlayerData>();
-        if (playerData != null && playerData.IsHunter && newMoveInput.magnitude > 0.1f)
-        {
-            Debug.Log($"Hunter {OwnerClientId} move input: {newMoveInput}");
-        }
-
-        moveInput = newMoveInput;
+        moveInput = value.Get<Vector2>();
     }
 
     // Input System callback for Look action
@@ -632,111 +544,90 @@ public class Movement : NetworkBehaviour
     {
         if (!IsOwner) return;
         isSprintPressed = value.isPressed;
-
-        // Debug logging for hunters
-        PlayerData playerData = GetComponent<PlayerData>();
-        if (playerData != null && playerData.IsHunter)
-        {
-            Debug.Log($"Hunter {OwnerClientId} sprint input: {value.isPressed}");
-        }
     }
 
-    // Input System callback for Interact action (if it exists in Input Actions)
-    public void OnInteract(InputValue value)
-    {
-        if (!IsOwner) return;
-        isInteractPressed = value.isPressed;
-    }
-
-    // Handle collisions with other players to prevent spinning
+    // Handle collisions with other players
     void OnCollisionEnter(Collision collision)
     {
-        // Log collision for debugging, especially for hunters
-        PlayerData playerData = GetComponent<PlayerData>();
-        if (playerData != null && playerData.IsHunter && collision.gameObject.GetComponent<Movement>() != null)
-        {
-            // Check if hunter is facing the player
-            Vector3 directionToPlayer = (collision.transform.position - transform.position).normalized;
-            Vector3 hunterForward = transform.forward;
-            
-            // Calculate the angle between hunter's forward direction and direction to player
-            float angle = Vector3.Angle(hunterForward, directionToPlayer);
-            
-            // Only allow catch if hunter is facing the player (within 45 degrees)
-            if (angle <= 45f)
-            {
-                // Get the caught player's data before destroying
-                Movement caughtPlayerMovement = collision.gameObject.GetComponent<Movement>();
-                PlayerData caughtPlayerData = collision.gameObject.GetComponent<PlayerData>();
-                
-                if (caughtPlayerMovement != null && caughtPlayerData != null)
-                {
-                    // If this is the local player who got caught, handle their elimination
-                    if (caughtPlayerMovement.IsOwner)
-                    {
-                        Debug.Log($"Local player {caughtPlayerData.PlayerName} was caught by hunter - returning to main menu");
-                        
-                        // Start coroutine to handle elimination sequence
-                        StartCoroutine(HandlePlayerElimination());
-                    }
-                    
-                    Debug.Log($"Hunter {OwnerClientId} caught {caughtPlayerData.PlayerName} while facing them (angle: {angle:F1}°)");
-                }
-                
-                Destroy(collision.gameObject);
-            }
-            else
-            {
-                Debug.Log($"Hunter {OwnerClientId} collided with {collision.gameObject.name} but wasn't facing them (angle: {angle:F1}°)");
-            }
-        }
-        // Check if we collided with another player
-        if (collision.gameObject.GetComponent<Movement>() != null)
-        {
-            // Stop any unwanted rotation immediately
-            if (rb != null)
-            {
-                rb.angularVelocity = Vector3.zero;
+        // Only players collide meaningfully here
+        if (collision.gameObject.GetComponent<Movement>() == null) return;
 
-                // Reduce the collision impact by dampening the velocity
-                Vector3 currentVelocity = rb.velocity;
-                currentVelocity.x *= collisionDamping; // Reduce horizontal velocity
-                currentVelocity.z *= collisionDamping; // Reduce horizontal velocity
-                rb.velocity = currentVelocity;
-            }
+        TryCatchPlayer(collision);
+
+        // Stop any unwanted rotation immediately (runs locally on every peer)
+        if (rb != null)
+        {
+            rb.angularVelocity = Vector3.zero;
+
+            // Reduce the collision impact by dampening the velocity
+            Vector3 currentVelocity = rb.velocity;
+            currentVelocity.x *= collisionDamping;
+            currentVelocity.z *= collisionDamping;
+            rb.velocity = currentVelocity;
         }
+    }
+
+    // The catch is server-authoritative. Physics runs on every peer, so doing this locally
+    // meant every client independently Destroy()'d a live NetworkObject - which NGO rejects.
+    private void TryCatchPlayer(Collision collision)
+    {
+        if (!IsServer) return;
+
+        PlayerData playerData = GetComponent<PlayerData>();
+        if (playerData == null || !playerData.IsHunter) return;
+
+        PlayerData caughtPlayerData = collision.gameObject.GetComponent<PlayerData>();
+        NetworkObject caughtNetworkObject = collision.gameObject.GetComponent<NetworkObject>();
+        if (caughtPlayerData == null || caughtNetworkObject == null) return;
+
+        // Hunters can't catch other hunters
+        if (caughtPlayerData.IsHunter) return;
+
+        // Only allow a catch if the hunter is actually facing the player
+        Vector3 directionToPlayer = (collision.transform.position - transform.position).normalized;
+        float angle = Vector3.Angle(transform.forward, directionToPlayer);
+        if (angle > catchAngle)
+        {
+            return;
+        }
+
+        ulong caughtClientId = caughtPlayerData.OwnerClientId;
+        Debug.Log($"Hunter {OwnerClientId} caught {caughtPlayerData.PlayerName} (angle: {angle:F1})");
+
+        // Tell the caught client to bail out, then despawn their object for everyone.
+        NotifyPlayerCaughtClientRpc(new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { caughtClientId } }
+        });
+
+        if (caughtNetworkObject.IsSpawned)
+        {
+            caughtNetworkObject.Despawn();
+        }
+    }
+
+    [ClientRpc]
+    private void NotifyPlayerCaughtClientRpc(ClientRpcParams rpcParams = default)
+    {
+        Debug.Log("You were caught by the hunter - returning to main menu");
+        StartCoroutine(HandlePlayerElimination());
     }
 
     void OnCollisionStay(Collision collision)
     {
         // Continuously prevent spinning while in contact with another player
-        if (collision.gameObject.GetComponent<Movement>() != null)
+        if (rb != null && collision.gameObject.GetComponent<Movement>() != null)
         {
-            if (rb != null)
-            {
-                rb.angularVelocity = Vector3.zero;
-            }
+            rb.angularVelocity = Vector3.zero;
         }
     }
 
     void HandleInteraction()
     {
-        // Get interaction input (try Input Actions first, fallback to KeyCode)
-        bool interactInput = false;
-        if (interactAction != null)
-        {
-            interactInput = interactAction.IsPressed();
-        }
-        else
-        {
-            interactInput = Input.GetKey(interactKey);
-        }
-
-        // If we have manual input, override the callback value
-        if (interactInput != isInteractPressed)
-        {
-            isInteractPressed = interactInput;
-        }
+        // Get interaction input (Input Actions if an Interact action exists, otherwise the key)
+        bool isInteractPressed = interactAction != null
+            ? interactAction.IsPressed()
+            : Input.GetKey(interactKey);
 
         // Raycast from camera to detect interactable objects
         IInteractable detectedInteractable = GetInteractableInView();
@@ -783,7 +674,7 @@ public class Movement : NetworkBehaviour
             }
             else if (isInteracting)
             {
-                // Cancel interaction if E is released
+                // Cancel interaction if the key is released
                 currentInteractable.OnInteractionCancel();
                 isInteracting = false;
                 interactionTimer = 0f;
@@ -830,16 +721,14 @@ public class Movement : NetworkBehaviour
 
             if (Physics.Raycast(ray, out hit, interactionRange, interactableLayerMask))
             {
-                // Check if the hit object has an IInteractable component
-                IInteractable interactable = hit.collider.GetComponent<IInteractable>();
+                // GetComponentInParent so interactables whose collider lives on a child still work
+                IInteractable interactable = hit.collider.GetComponentInParent<IInteractable>();
 
                 if (interactable != null && hit.distance < closestDistance)
                 {
                     closestInteractable = interactable;
                     closestDistance = hit.distance;
-
                 }
-
             }
         }
 
@@ -853,25 +742,22 @@ public class Movement : NetworkBehaviour
         Mathf.Clamp01(interactionTimer / currentInteractable.InteractionDuration) : 0f;
 
     // Coroutine to handle player elimination sequence
-    private System.Collections.IEnumerator HandlePlayerElimination()
+    private IEnumerator HandlePlayerElimination()
     {
         // Unlock cursor first
         Cursor.lockState = CursorLockMode.None;
-        
+
         // Wait a brief moment for any network cleanup
         yield return new WaitForSeconds(0.5f);
-        
-        // Shutdown the network manager
+
+        // Shutdown despawns this object, so the scene load has to happen in the same frame -
+        // anything after a yield here would never run.
         if (NetworkManager.Singleton != null)
         {
             Debug.Log("Shutting down NetworkManager for eliminated player");
             NetworkManager.Singleton.Shutdown();
         }
-        
-        // Wait a moment for network shutdown to complete
-        yield return new WaitForSeconds(0.3f);
-        
-        // Load the main menu scene
+
         Debug.Log("Loading main menu scene for eliminated player");
         UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
     }
@@ -893,6 +779,4 @@ public class Movement : NetworkBehaviour
             Gizmos.DrawRay(cameraTransform.position, cameraTransform.forward * interactionRange);
         }
     }
-    
-
 }

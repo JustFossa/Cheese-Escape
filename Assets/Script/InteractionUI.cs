@@ -27,51 +27,21 @@ public class InteractionUI : MonoBehaviour
     [SerializeField] private Color lockedColor = Color.red;
     
     [Header("Animation Settings")]
-    [SerializeField] private bool enableFadeAnimation = true;
-    [SerializeField] private float fadeSpeed = 5f;
     [SerializeField] private bool enablePulseEffect = true;
     [SerializeField] private float pulseSpeed = 2f;
-    
+
     private Movement playerMovement;
-    private CanvasGroup panelCanvasGroup;
-    private bool isUIVisible = false;
-    private float currentAlpha = 0f;
-    
+
     void Start()
     {
-        // Find the local player's movement component
-        Movement[] movements = FindObjectsOfType<Movement>();
-        foreach (Movement movement in movements)
-        {
-            if (movement.IsOwner)
-            {
-                playerMovement = movement;
-                break;
-            }
-        }
-        
-        // Fallback to any movement if no owner found
-        if (playerMovement == null && movements.Length > 0)
-        {
-            playerMovement = movements[0];
-        }
-        
-        // Setup Canvas Group for smooth fading
-        if (interactionPanel != null)
-        {
-            panelCanvasGroup = interactionPanel.GetComponent<CanvasGroup>();
-            if (panelCanvasGroup == null)
-            {
-                panelCanvasGroup = interactionPanel.AddComponent<CanvasGroup>();
-            }
-        }
-        
+        FindLocalPlayerMovement();
+
         // Make sure we have the UI elements
         if (interactionPanel == null)
         {
             Debug.LogWarning("InteractionUI: interactionPanel is not assigned!");
         }
-        
+
         // Initialize progress slider
         if (progressSlider != null)
         {
@@ -79,18 +49,40 @@ public class InteractionUI : MonoBehaviour
             progressSlider.maxValue = 1f;
             progressSlider.value = 0f;
         }
-        
+
         if (progressFill != null)
         {
             progressFill.color = progressBarColor;
         }
-        
-        interactionPanel.SetActive(false);
+
+        if (interactionPanel != null)
+        {
+            interactionPanel.SetActive(false);
+        }
     }
-    
+
+    // Only ever binds to the OWNING player. The old fallback grabbed movements[0] when the
+    // local player hadn't spawned yet and then never re-checked, so the HUD could end up
+    // mirroring a remote player's interactions for the whole round.
+    private void FindLocalPlayerMovement()
+    {
+        foreach (Movement movement in FindObjectsOfType<Movement>())
+        {
+            if (movement.IsOwner)
+            {
+                playerMovement = movement;
+                return;
+            }
+        }
+    }
+
     void Update()
     {
-        if (playerMovement == null) return;
+        if (playerMovement == null)
+        {
+            FindLocalPlayerMovement();
+            return;
+        }
         
         IInteractable currentInteractable = playerMovement.CurrentInteractable;
         bool isInteracting = playerMovement.IsInteracting;
@@ -122,9 +114,9 @@ public class InteractionUI : MonoBehaviour
     
     private void HandleUIVisibility(IInteractable currentInteractable)
     {
-        bool shouldShowUI = currentInteractable != null;
-        
-        interactionPanel.SetActive(shouldShowUI);
+        if (interactionPanel == null) return;
+
+        interactionPanel.SetActive(currentInteractable != null);
     }
     
     private void UpdateInteractionText(IInteractable interactable, bool isInteracting)
