@@ -126,24 +126,7 @@ public class InteractableObject : MonoBehaviour, IInteractable
         // - Open a door
         // - Collect an item
 
-        // Check if this is a cheese object
-        if (gameObject.tag == "Cheese" || gameObject.name.ToLower().Contains("cheese"))
-        {
-            // Update cheese count using GameUI singleton
-            if (GameUI.Instance != null)
-            {
-                GameUI.Instance.AddCheese(cheeseValue);
-                Debug.Log($"Collected {cheeseValue} cheese! UI updated.");
-            }
-            else
-            {
-                Debug.LogWarning("GameUI Instance not found! Cannot update cheese count.");
-            }
-            
-            // Disable the cheese object
-            gameObject.SetActive(false);
-        }
-        else if (gameObject.tag.Equals("Button"))
+        if (gameObject.tag.Equals("Button"))
         {
             // Handle button interaction (door opening)
             if (doorObject != null)

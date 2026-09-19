@@ -38,3 +38,13 @@ public interface IInteractable
     /// </summary>
     bool CanInteract { get; }
 }
+
+/// <summary>
+/// Optional. For interactables that sit on things you can look at all the time (a player's body,
+/// a table) but only mean something in some situations. While ShowPrompt is false the interaction
+/// ray ignores the object, so it doesn't flash a locked prompt at a healthy teammate.
+/// </summary>
+public interface IConditionalPrompt
+{
+    bool ShowPrompt { get; }
+}

@@ -26,6 +26,8 @@ public class PlayerManager : NetworkBehaviour
     
     // Round-robin index into the survivor spawn points
     private int nextSpawnIndex = 0;
+    // Hunters after the first are spaced out so two capsules never spawn inside each other.
+    private int nextHunterIndex = 0;
 
     // Events for UI updates
     public System.Action<ulong, string> OnLobbyPlayerJoined;
@@ -441,6 +443,33 @@ public class PlayerManager : NetworkBehaviour
         print($"Lobby players cleanup completed. Player names preserved: {string.Join(", ", playerNames.Values)}");
     }
     
+    // End of round: despawn every game player (the connection stays up). PlayerData unregisters
+    // itself as it despawns, so connectedPlayers empties and the next round can spawn fresh ones.
+    public void DespawnGamePlayers()
+    {
+        if (!IsServer) return;
+
+        foreach (PlayerData player in new List<PlayerData>(connectedPlayers.Values))
+        {
+            if (player != null && player.NetworkObject != null && player.NetworkObject.IsSpawned)
+            {
+                player.NetworkObject.Despawn();
+            }
+        }
+        connectedPlayers.Clear();
+    }
+
+    // Return trip: every connected client gets a lobby player again.
+    public void SpawnLobbyPlayersForAllClients()
+    {
+        if (!IsServer) return;
+
+        foreach (ulong clientId in new List<ulong>(NetworkManager.Singleton.ConnectedClientsIds))
+        {
+            SpawnLobbyPlayer(clientId);
+        }
+    }
+
     // Method to spawn game players for all connected clients when transitioning from lobby to game
     public void SpawnGamePlayersForAllClients()
     {
@@ -453,15 +482,20 @@ public class PlayerManager : NetworkBehaviour
         print($"Spawning game players for {NetworkManager.Singleton.ConnectedClientsIds.Count} connected clients...");
 
         var clientIds = NetworkManager.Singleton.ConnectedClientsIds;
-        ulong hunter = clientIds[UnityEngine.Random.Range(0, clientIds.Count)];
-        print("Selected hunter: client " + hunter);
+
+        // RoundManager rotates the role (least-hunted first) and adds a second hunter from 6 players.
+        List<ulong> hunters = RoundManager.Instance != null
+            ? RoundManager.Instance.PickHunters(clientIds)
+            : new List<ulong> { clientIds[UnityEngine.Random.Range(0, clientIds.Count)] };
+        print("Selected hunters: " + string.Join(", ", hunters));
 
         nextSpawnIndex = 0;
+        nextHunterIndex = 0;
 
         // Get all connected clients
         foreach (var clientId in clientIds)
         {
-            SpawnGamePlayer(clientId, clientId == hunter);
+            SpawnGamePlayer(clientId, hunters.Contains(clientId));
         }
         
         print("Game player spawning process completed");
@@ -603,7 +637,9 @@ public class PlayerManager : NetworkBehaviour
 
         if (isHunter)
         {
-            return new Vector3(-26.55f, 1, -59.71f);
+            // ponytail: 1.5 units sideways per extra hunter - unchecked against the walls around
+            // the hunter's room; move to authored spawn points if two hunters ever clip.
+            return new Vector3(-26.55f + 1.5f * nextHunterIndex++, 1, -59.71f);
         }
         var spawnPoints = new Vector3[]
         {

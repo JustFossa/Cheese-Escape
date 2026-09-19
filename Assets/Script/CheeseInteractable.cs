@@ -47,8 +47,18 @@ public class CheeseInteractable : NetworkBehaviour, IInteractable
 
     // Interface properties
     public float InteractionDuration => interactionDuration;
-    public string InteractionPrompt => interactionPrompt;
-    public bool CanInteract => canInteract && !isCollected.Value;
+    public string InteractionPrompt => CarryingFull ? "Your hands are full - bank the cheese in a safe zone" : interactionPrompt;
+    public bool CanInteract => canInteract && !isCollected.Value && !CarryingFull;
+
+    // Picking cheese up means carrying it (up to RoundRules.CarryCap) until a safe zone banks it.
+    private static bool CarryingFull
+    {
+        get
+        {
+            PlayerData me = PlayerData.Local;
+            return me != null && !me.IsHunter && me.carriedCheese.Value >= RoundRules.CarryCap;
+        }
+    }
 
     private void Start()
     {
@@ -196,8 +206,17 @@ public class CheeseInteractable : NetworkBehaviour, IInteractable
             return;
         }
 
-        // Notify all clients about collection
-        NotifyCheeseCollectedClientRpc(player.OwnerClientId, cheeseValue, cheeseName);
+        // The server re-checks everything the client's prompt already gated: a request can be
+        // late (round over, player downed) or forged.
+        if (!player.CanAct || RoundManager.Instance == null || RoundManager.Instance.state.Value != RoundState.Playing) return;
+        if (player.carriedCheese.Value >= RoundRules.CarryCap) return;
+
+        // Carried, not counted: it only reaches the team total when a safe zone banks it
+        // (SafeZones -> RoundManager.Deposit), and it is lost if the carrier is downed first.
+        player.carriedCheese.Value = Mathf.Min(RoundRules.CarryCap, player.carriedCheese.Value + cheeseValue);
+
+        // Everyone hears the pickup at the cheese's position - noise is how the hunter reads the map.
+        PlayPickupClientRpc(transform.position);
 
         Debug.Log($"Cheese '{cheeseName}' (value: {cheeseValue}) collected by {player.PlayerName}");
 
@@ -209,15 +228,16 @@ public class CheeseInteractable : NetworkBehaviour, IInteractable
     }
 
     [ClientRpc]
-    private void NotifyCheeseCollectedClientRpc(ulong collectorClientId, int value, string collectedName)
+    private void PlayPickupClientRpc(Vector3 position)
     {
-        // Cheese is a shared team total, so every client advances its own counter.
-        if (GameUI.Instance != null)
-        {
-            GameUI.Instance.AddCheese(value);
-        }
+        ProximityAudio.PlayAt(position, ProximityAudio.Pickup);
+    }
 
-        Debug.Log($"Cheese '{collectedName}' collected! Value: {value}");
+    // RoundManager shuffles cheese to new spots each round; keep the bob centred on the new home.
+    public void MoveTo(Vector3 position)
+    {
+        transform.position = position;
+        originalPosition = position;
     }
 
     private PlayerData GetPlayerFromClientId(ulong clientId)

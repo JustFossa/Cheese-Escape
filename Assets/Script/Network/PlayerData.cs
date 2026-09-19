@@ -44,9 +44,46 @@ public class PlayerData : NetworkBehaviour
         NetworkVariableReadPermission.Everyone
     );
 
+    // Server-written, read by everyone. Nothing despawns on a catch any more: a caught survivor
+    // goes Downed, then Caught (spectating) - the round decides when anyone leaves the scene.
+    public NetworkVariable<LifeState> lifeState = new NetworkVariable<LifeState>(LifeState.Alive);
+    public NetworkVariable<int> hiddenSpot = new NetworkVariable<int>(-1);
+    public NetworkVariable<double> bleedoutEnd = new NetworkVariable<double>(0);
+
+    // Chosen in the lobby, copied here by the server at spawn. Use ActivePerk, which ignores hunters.
+    public NetworkVariable<Perk> perk = new NetworkVariable<Perk>(Perk.None);
+    // Cheese picked up but not yet banked in a safe zone. Lost if this survivor is downed.
+    public NetworkVariable<int> carriedCheese = new NetworkVariable<int>(0);
+    // Server time until which the hunter can see this survivor through walls (alarm, trap).
+    public NetworkVariable<double> revealedUntil = new NetworkVariable<double>(0);
+    // Server time until which a trap keeps this survivor slow.
+    public NetworkVariable<double> slowedUntil = new NetworkVariable<double>(0);
+
     private NetworkList<KeyData> collectedKeys;
+    private Collider[] bodyColliders;
+    private bool[] colliderWasTrigger;
+    private Vector3 preHidePosition;
+
+    // The PlayerData this machine controls, or null in the menus / before spawn.
+    public static PlayerData Local
+    {
+        get
+        {
+            NetworkManager nm = NetworkManager.Singleton;
+            NetworkObject po = nm != null && nm.LocalClient != null ? nm.LocalClient.PlayerObject : null;
+            return po != null ? po.GetComponent<PlayerData>() : null;
+        }
+    }
 
     public string PlayerName => playerName.Value.ToString();
+    public bool IsHidden => hiddenSpot.Value >= 0;
+    public bool CanAct => lifeState.Value == LifeState.Alive && !IsHidden;
+    public bool IsSpectating => lifeState.Value == LifeState.Caught || lifeState.Value == LifeState.Escaped;
+    public Perk ActivePerk => IsHunter ? Perk.None : perk.Value;
+    public bool IsRevealed => revealedUntil.Value > ServerNow;
+    public bool IsSlowed => slowedUntil.Value > ServerNow;
+
+    private static double ServerNow => NetworkManager.Singleton != null ? NetworkManager.Singleton.ServerTime.Time : 0.0;
 
     private void Awake()
     {
@@ -56,7 +93,17 @@ public class PlayerData : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-        
+
+        bodyColliders = GetComponentsInChildren<Collider>(true);
+        colliderWasTrigger = new bool[bodyColliders.Length];
+        for (int i = 0; i < bodyColliders.Length; i++) colliderWasTrigger[i] = bodyColliders[i].isTrigger;
+
+        lifeState.OnValueChanged += OnLifeStateChanged;
+        hiddenSpot.OnValueChanged += OnHiddenSpotChanged;
+        ApplyBody();
+        if (IsOwner && isHunter.Value) EnsureHunterSense();
+        if (IsServer && RoundManager.Instance != null) perk.Value = RoundManager.Instance.PerkOf(OwnerClientId);
+
         if (IsOwner)
         {
             // Get the player name from PlayerPrefs when the player spawns
@@ -93,7 +140,80 @@ public class PlayerData : NetworkBehaviour
         
         playerName.OnValueChanged -= OnPlayerNameChanged;
         isHunter.OnValueChanged -= OnHunterStatusChanged;
+        lifeState.OnValueChanged -= OnLifeStateChanged;
+        hiddenSpot.OnValueChanged -= OnHiddenSpotChanged;
         base.OnNetworkDespawn();
+    }
+
+    private void OnLifeStateChanged(LifeState oldState, LifeState newState) => ApplyBody();
+
+    // Runs on every peer. Downed bodies stay hittable by the interaction ray (so a teammate can
+    // find them to revive) but stop blocking anyone; caught/escaped/hidden bodies are gone.
+    private void ApplyBody()
+    {
+        LifeState s = lifeState.Value;
+        bool solid = s == LifeState.Alive && !IsHidden;
+        bool downed = s == LifeState.Downed;
+
+        for (int i = 0; i < bodyColliders.Length; i++)
+        {
+            if (bodyColliders[i] == null) continue;
+            bodyColliders[i].enabled = solid || downed;
+            bodyColliders[i].isTrigger = downed || colliderWasTrigger[i];
+        }
+
+        Rigidbody rb = GetComponent<Rigidbody>();
+        if (rb != null) rb.isKinematic = !solid;
+
+        // The owner's own model is already hidden by Movement so they don't see their body.
+        Movement m = GetComponent<Movement>();
+        if (m != null && m.playerModel != null && !IsOwner)
+        {
+            m.playerModel.SetActive(!IsSpectating && !IsHidden);
+        }
+    }
+
+    // Only the owner moves - the transform is owner-authoritative (ClientNetworkTransform).
+    private void OnHiddenSpotChanged(int oldSpot, int newSpot)
+    {
+        ApplyBody();
+        if (!IsOwner) return;
+
+        Movement m = GetComponent<Movement>();
+        if (m == null) return;
+
+        if (newSpot >= 0 && HidingSpot.TryGet(newSpot, out HidingSpot spot))
+        {
+            preHidePosition = transform.position;
+            m.HideAt(spot.HidePosition(transform.position.y), spot.CameraWorldY);
+        }
+        else if (oldSpot >= 0)
+        {
+            m.Teleport(preHidePosition);
+        }
+    }
+
+    // Server only. Caught survivors go down first so a teammate can revive them; bleeding out
+    // (RoundManager) is what actually takes them out of the round.
+    public void Down(double bleedoutSeconds)
+    {
+        if (!IsServer || IsHunter || lifeState.Value != LifeState.Alive || IsHidden) return;
+        if (RoundManager.Instance != null && RoundManager.Instance.state.Value == RoundState.Ending) return;
+
+        // A carrier who goes down loses what they were carrying - that is the risk of carrying.
+        if (carriedCheese.Value > 0)
+        {
+            if (RoundManager.Instance != null) RoundManager.Instance.LoseCheese(carriedCheese.Value);
+            carriedCheese.Value = 0;
+        }
+
+        bleedoutEnd.Value = NetworkManager.ServerTime.Time + bleedoutSeconds;
+        lifeState.Value = LifeState.Downed;
+    }
+
+    private void EnsureHunterSense()
+    {
+        if (GetComponent<HunterSense>() == null) gameObject.AddComponent<HunterSense>();
     }
 
     [ServerRpc]
@@ -130,6 +250,7 @@ public class PlayerData : NetworkBehaviour
         if (newStatus)
         {
             Debug.Log($"{playerName.Value} is now the HUNTER!");
+            if (IsOwner) EnsureHunterSense();
         }
         else
         {
@@ -187,6 +308,17 @@ public class PlayerData : NetworkBehaviour
         }
         
         return null; // No hunter found
+    }
+
+    // From 6 players there are two hunters, so "the hunter" is not one object any more.
+    public static List<PlayerData> GetHunters()
+    {
+        List<PlayerData> hunters = new List<PlayerData>();
+        foreach (PlayerData player in FindObjectsOfType<PlayerData>())
+        {
+            if (player.IsHunter) hunters.Add(player);
+        }
+        return hunters;
     }
 
     // Key Management Methods
@@ -263,82 +395,14 @@ public class PlayerData : NetworkBehaviour
         }
     }
 
-    // Method called when player reaches the exit (wins the game).
-    // Called by GameEnd, which is server-gated - physics triggers fire on every peer, so
-    // running this client-side made every client broadcast its own victory RPC.
+    // Called by GameEnd, which is server-gated - physics triggers fire on every peer.
+    // Escaping only takes THIS survivor out of play; the round keeps going for everyone else and
+    // RoundManager ends it once nobody is left (it used to shut the whole session down).
     public void ReachExit()
     {
-        if (!IsServer) return;
+        if (!IsServer || IsHunter || !CanAct) return;
 
-        // Only non-hunters can win by reaching the exit
-        if (IsHunter)
-        {
-            Debug.Log($"Hunter {PlayerName} reached exit but hunters cannot win this way");
-            return;
-        }
-
-        Debug.Log($"Player {PlayerName} reached the exit and won the game!");
-
-        // Notify every player exactly once
-        NotifyPlayerVictoryClientRpc(playerName.Value);
-    }
-
-    // Client RPC to notify all players about the victory
-    [ClientRpc]
-    private void NotifyPlayerVictoryClientRpc(FixedString64Bytes winnerName)
-    {
-        Debug.Log($"Game Over! {winnerName} escaped and won the game!");
-
-        // This RPC runs on the winner's PlayerData instance on every client, so IsOwner is
-        // true only on the winning player's machine.
-        if (IsOwner)
-        {
-            StartCoroutine(HandlePlayerVictory());
-        }
-        else
-        {
-            StartCoroutine(HandleGameEndForOthers(winnerName.ToString()));
-        }
-    }
-
-    // Coroutine to handle victory sequence for the winning player
-    private System.Collections.IEnumerator HandlePlayerVictory()
-    {
-        // Unlock cursor
-        Cursor.lockState = CursorLockMode.None;
-        
-        // Wait a moment to show victory
-        yield return new WaitForSeconds(2f);
-
-        // Shutdown despawns this object, so the load must happen in the same frame -
-        // anything after a yield here would never run.
-        if (NetworkManager.Singleton != null)
-        {
-            Debug.Log("Shutting down NetworkManager for victorious player");
-            NetworkManager.Singleton.Shutdown();
-        }
-
-        Debug.Log("Loading main menu scene for victorious player");
-        UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
-    }
-
-    // Coroutine to handle game end for other players
-    private System.Collections.IEnumerator HandleGameEndForOthers(string winnerName)
-    {
-        // Wait a moment to process the victory message
-        yield return new WaitForSeconds(3f);
-        
-        // Unlock cursor
-        Cursor.lockState = CursorLockMode.None;
-
-        // Same as above - shutdown despawns this object, so load in the same frame.
-        if (NetworkManager.Singleton != null)
-        {
-            Debug.Log($"Game ended - {winnerName} won. Shutting down NetworkManager");
-            NetworkManager.Singleton.Shutdown();
-        }
-
-        Debug.Log("Loading main menu scene after game end");
-        UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
+        Debug.Log($"Player {PlayerName} reached the exit and escaped!");
+        lifeState.Value = LifeState.Escaped;
     }
 }

@@ -203,26 +203,6 @@ public class UIHandler : MonoBehaviour, IPointerClickHandler
         cheeseCountText.text = $"Cheese: {cheeseCount}";
     }
 
-    // Public method to update cheese count (to be called by cheese collection system)
-    public void AddCheese(int amount = 1)
-    {
-        if (GameUI.Instance != null)
-        {
-            GameUI.Instance.AddCheese(amount);
-        }
-        UpdateCheeseDisplay();
-    }
-
-    // Public method to reset cheese count
-    public void ResetCheese()
-    {
-        if (GameUI.Instance != null)
-        {
-            GameUI.Instance.ResetCheese();
-        }
-        UpdateCheeseDisplay();
-    }
-    
     private void OnClientDisconnected(ulong clientId)
     {
         // If this is the local client disconnecting unexpectedly

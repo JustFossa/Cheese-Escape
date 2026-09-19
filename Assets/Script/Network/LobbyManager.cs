@@ -195,6 +195,15 @@ public class LobbyManager : NetworkBehaviour
         }
     }
 
+    // Called by RoundManager when a round ends, so the lobby is startable again without anyone
+    // reconnecting. This flag is also what PlayerManager reads to decide lobby vs game spawns.
+    public void ResetForNewRound()
+    {
+        if (!IsServer) return;
+        UpdatePlayerCount();
+        isGameStarted.Value = false;
+    }
+
     // Public properties to access network variables
     public int ConnectedPlayersCount => connectedPlayersCount.Value;
     public bool IsGameStarted => isGameStarted.Value;

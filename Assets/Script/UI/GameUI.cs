@@ -26,16 +26,12 @@ public class GameUI : MonoBehaviour
     [SerializeField] private float updateInterval = 0.5f; // Update UI every 0.5 seconds instead of every frame
     
     private PlayerData localPlayerData;
-    private int cheeseCount = 0; // Placeholder for cheese system
     private float lastUpdateTime = 0f;
 
     [Header("Cheese Door")]
     public GameObject cheeseDoor;
-    // ponytail: 6 of the 9 cheese in GameScene - leaves route choice and slack for
-    // cheese the hunter camps. Raise only if the scene gains more cheese.
-    [SerializeField] private int cheeseNeededForDoor = 6;
     private bool cheeseDoorOpened = false;
-    
+
     // Static instance for easy access from other scripts
     public static GameUI Instance { get; private set; }
     
@@ -182,34 +178,20 @@ public class GameUI : MonoBehaviour
         }
     }
     
+    // The count is one replicated number on RoundManager, so every client opens the door off the
+    // same value. It used to be a per-client int bumped by a ClientRpc - in sync by luck.
     private void UpdateCheeseDisplay()
     {
-        if (cheeseCountText == null) return;
-        
-        // Display current cheese count
-        cheeseCountText.text = cheesePrefix + cheeseCount.ToString();
-        
-        // TODO: When cheese collection system is implemented, replace with:
-        // if (localPlayerData != null)
-        // {
-        //     cheeseCount = localPlayerData.GetCheeseCount();
-        //     cheeseCountText.text = cheesePrefix + cheeseCount.ToString();
-        // }
-    }
-    
-    // Public methods for cheese management (to be called by cheese collection system)
-    
-    /// <summary>
-    /// Add cheese to the player's collection
-    /// </summary>
-    /// <param name="amount">Amount of cheese to add</param>
-    public void AddCheese(int amount = 1)
-    {
-        cheeseCount += amount;
+        RoundManager round = RoundManager.Instance;
+        int count = round != null ? round.CheeseCollected : 0;
+        int needed = round != null ? round.CheeseNeeded : 0;
 
-        // >= not ==: a pickup worth more than 1 used to step straight past the threshold
-        // and the door would never open.
-        if (!cheeseDoorOpened && cheeseCount >= cheeseNeededForDoor)
+        if (cheeseCountText != null)
+        {
+            cheeseCountText.text = needed > 0 ? $"{cheesePrefix}{count}/{needed}" : cheesePrefix + count;
+        }
+
+        if (!cheeseDoorOpened && needed > 0 && count >= needed)
         {
             cheeseDoorOpened = true;
             if (cheeseDoor != null)
@@ -217,49 +199,13 @@ public class GameUI : MonoBehaviour
                 Destroy(cheeseDoor);
             }
         }
+    }
 
-        UpdateCheeseDisplay();
-        Debug.Log($"Cheese collected! Total: {cheeseCount}");
-    }
-    
-    /// <summary>
-    /// Remove cheese from the player's collection
-    /// </summary>
-    /// <param name="amount">Amount of cheese to remove</param>
-    public void RemoveCheese(int amount = 1)
-    {
-        cheeseCount = Mathf.Max(0, cheeseCount - amount);
-        UpdateCheeseDisplay();
-    }
-    
-    /// <summary>
-    /// Set the cheese count to a specific value
-    /// </summary>
-    /// <param name="count">New cheese count</param>
-    public void SetCheeseCount(int count)
-    {
-        cheeseCount = Mathf.Max(0, count);
-        UpdateCheeseDisplay();
-    }
-    
-    /// <summary>
-    /// Get the current cheese count
-    /// </summary>
-    /// <returns>Current cheese count</returns>
     public int GetCheeseCount()
     {
-        return cheeseCount;
+        return RoundManager.Instance != null ? RoundManager.Instance.CheeseCollected : 0;
     }
-    
-    /// <summary>
-    /// Reset cheese count to zero
-    /// </summary>
-    public void ResetCheese()
-    {
-        cheeseCount = 0;
-        UpdateCheeseDisplay();
-    }
-    
+
     // Public methods for UI customization
     
     /// <summary>
@@ -300,7 +246,7 @@ public class GameUI : MonoBehaviour
     {
         string info = "GameUI Debug Info:\n";
         info += $"Local Player Found: {localPlayerData != null}\n";
-        info += $"Cheese Count: {cheeseCount}\n";
+        info += $"Cheese Count: {GetCheeseCount()}\n";
         
         if (localPlayerData != null)
         {

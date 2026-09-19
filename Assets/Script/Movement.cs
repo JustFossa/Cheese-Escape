@@ -90,6 +90,67 @@ public class Movement : NetworkBehaviour
 
         // Setup camera and input after network spawn
         SetupPlayerComponents();
+
+        // Plain MonoBehaviours added at runtime, so no prefab YAML has to stay in sync.
+        gameObject.AddComponent<ProximityAudio>();
+        gameObject.AddComponent<DownedPlayer>();
+        if (IsOwner)
+        {
+            gameObject.AddComponent<SpectatorCamera>();
+            gameObject.AddComponent<SurvivorAbilities>(); // idles while this player is the hunter
+        }
+    }
+
+    private PlayerData me;
+    private PlayerData Me => me != null ? me : (me = GetComponent<PlayerData>());
+
+    // Everything that speeds up or slows down this player, on top of the prefab's speeds. The hunter
+    // gets rage (capped so a fresh survivor sprint still wins - see RoundRules); a survivor is slowed by
+    // what they carry and by a trap. All of it is derived from replicated state, so no RPC.
+    private float SpeedScale
+    {
+        get
+        {
+            PlayerData p = Me;
+            if (p.IsHunter)
+            {
+                return RoundManager.Instance != null ? RoundRules.RageSpeedScale(RoundManager.Instance.Rage) : 1f;
+            }
+
+            float s = RoundRules.CarrySpeedScale(p.carriedCheese.Value);
+            if (p.IsSlowed) s *= RoundRules.SlowScale;
+            return s;
+        }
+    }
+
+    // Snap the body somewhere (hiding spots). NetworkTransform.Teleport stops remote peers
+    // interpolating the jump as a slide across the map.
+    public void Teleport(Vector3 position)
+    {
+        if (rb != null)
+        {
+            if (!rb.isKinematic) rb.velocity = Vector3.zero;
+            rb.position = position;
+        }
+        transform.position = position;
+
+        var nt = GetComponent<Unity.Netcode.Components.NetworkTransform>();
+        if (nt != null) nt.Teleport(position, transform.rotation, transform.localScale);
+    }
+
+    public void HideAt(Vector3 position, float cameraWorldY)
+    {
+        Teleport(position);
+        Vector3 cam = cameraTransform.position;
+        cameraTransform.position = new Vector3(cam.x, cameraWorldY, cam.z);
+    }
+
+    private void CancelInteraction()
+    {
+        if (currentInteractable != null && isInteracting) currentInteractable.OnInteractionCancel();
+        isInteracting = false;
+        interactionTimer = 0f;
+        currentInteractable = null;
     }
 
     // Start is called before the first frame update
@@ -314,6 +375,16 @@ public class Movement : NetworkBehaviour
         // Input actions are bound asynchronously by SetupInputActions; skip until they exist.
         if (moveAction == null || lookAction == null || sprintAction == null) return;
 
+        // Downed, hidden, caught or escaped: no walking or interacting. Downed and hidden players
+        // can still look around; a spectator's camera belongs to SpectatorCamera.
+        if (!Me.CanAct)
+        {
+            moveDirection = Vector3.zero;
+            CancelInteraction();
+            if (!Me.IsSpectating) HandleMouseLook();
+            return;
+        }
+
         // Handle stamina system
         HandleStamina();
 
@@ -347,8 +418,8 @@ public class Movement : NetworkBehaviour
 
     void FixedUpdate()
     {
-        // Only move if this is the local player
-        if (!IsOwner || rb == null) return;
+        // Only move if this is the local player, and only while in play
+        if (!IsOwner || rb == null || !Me.CanAct) return;
 
         // Handle movement
         Move();
@@ -357,7 +428,7 @@ public class Movement : NetworkBehaviour
     void Move()
     {
         // Determine current movement speed based on sprinting
-        float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
+        float currentSpeed = (isSprinting ? sprintSpeed : moveSpeed) * SpeedScale;
 
         // Use AddForce for more natural physics interaction instead of directly setting velocity
         Vector3 targetVelocity = moveDirection * currentSpeed;
@@ -466,7 +537,7 @@ public class Movement : NetworkBehaviour
                 PlaySprintStartSound();
             }
 
-            currentStamina -= sprintStaminaDrain * Time.deltaTime;
+            currentStamina -= sprintStaminaDrain * RoundRules.DrainScale(Me.ActivePerk) * Time.deltaTime;
             currentStamina = Mathf.Max(0f, currentStamina);
 
             // If stamina runs out, stop sprinting and prevent immediate restart
@@ -489,7 +560,7 @@ public class Movement : NetworkBehaviour
             // Regenerate stamina when not sprinting
             if (currentStamina < maxStamina)
             {
-                currentStamina += staminaRegenRate * Time.deltaTime;
+                currentStamina += staminaRegenRate * RoundRules.RegenScale(Me.ActivePerk) * Time.deltaTime;
                 currentStamina = Mathf.Min(maxStamina, currentStamina);
             }
 
@@ -577,11 +648,10 @@ public class Movement : NetworkBehaviour
         if (playerData == null || !playerData.IsHunter) return;
 
         PlayerData caughtPlayerData = collision.gameObject.GetComponent<PlayerData>();
-        NetworkObject caughtNetworkObject = collision.gameObject.GetComponent<NetworkObject>();
-        if (caughtPlayerData == null || caughtNetworkObject == null) return;
+        if (caughtPlayerData == null) return;
 
-        // Hunters can't catch other hunters
-        if (caughtPlayerData.IsHunter) return;
+        // Hunters can't catch other hunters, and only survivors in play can be caught
+        if (caughtPlayerData.IsHunter || !caughtPlayerData.CanAct) return;
 
         // Only allow a catch if the hunter is actually facing the player
         Vector3 directionToPlayer = (collision.transform.position - transform.position).normalized;
@@ -591,26 +661,11 @@ public class Movement : NetworkBehaviour
             return;
         }
 
-        ulong caughtClientId = caughtPlayerData.OwnerClientId;
         Debug.Log($"Hunter {OwnerClientId} caught {caughtPlayerData.PlayerName} (angle: {angle:F1})");
 
-        // Tell the caught client to bail out, then despawn their object for everyone.
-        NotifyPlayerCaughtClientRpc(new ClientRpcParams
-        {
-            Send = new ClientRpcSendParams { TargetClientIds = new[] { caughtClientId } }
-        });
-
-        if (caughtNetworkObject.IsSpawned)
-        {
-            caughtNetworkObject.Despawn();
-        }
-    }
-
-    [ClientRpc]
-    private void NotifyPlayerCaughtClientRpc(ClientRpcParams rpcParams = default)
-    {
-        Debug.Log("You were caught by the hunter - returning to main menu");
-        StartCoroutine(HandlePlayerElimination());
+        // Nothing despawns: the survivor goes down and stays in the scene, revivable until they
+        // bleed out, then spectates. The round - not the catch - decides when anyone leaves.
+        caughtPlayerData.Down(RoundManager.BleedoutSeconds);
     }
 
     void OnCollisionStay(Collision collision)
@@ -724,6 +779,8 @@ public class Movement : NetworkBehaviour
                 // GetComponentInParent so interactables whose collider lives on a child still work
                 IInteractable interactable = hit.collider.GetComponentInParent<IInteractable>();
 
+                if (interactable is IConditionalPrompt gate && !gate.ShowPrompt) continue;
+
                 if (interactable != null && hit.distance < closestDistance)
                 {
                     closestInteractable = interactable;
@@ -740,27 +797,6 @@ public class Movement : NetworkBehaviour
     public bool IsInteracting => isInteracting;
     public float InteractionProgress => currentInteractable != null ?
         Mathf.Clamp01(interactionTimer / currentInteractable.InteractionDuration) : 0f;
-
-    // Coroutine to handle player elimination sequence
-    private IEnumerator HandlePlayerElimination()
-    {
-        // Unlock cursor first
-        Cursor.lockState = CursorLockMode.None;
-
-        // Wait a brief moment for any network cleanup
-        yield return new WaitForSeconds(0.5f);
-
-        // Shutdown despawns this object, so the scene load has to happen in the same frame -
-        // anything after a yield here would never run.
-        if (NetworkManager.Singleton != null)
-        {
-            Debug.Log("Shutting down NetworkManager for eliminated player");
-            NetworkManager.Singleton.Shutdown();
-        }
-
-        Debug.Log("Loading main menu scene for eliminated player");
-        UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
-    }
 
     // Visual debugging for ground check and interaction ray
     void OnDrawGizmosSelected()
